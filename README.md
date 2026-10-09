@@ -26,6 +26,7 @@ cp .env.example .env      # 윈도우: copy .env.example .env
 python test_parsers.py            # 키·인터넷 없이 코드 점검
 python run_pipeline.py            # 수집 → 전처리
 python run_pipeline.py --offline  # 저장본만 사용 (인터넷 장애 대비)
+python counterfactual_check.py    # "없었다면" 모형의 근거 점검과 그림
 ```
 
 결과는 `data/processed` 에 저장됩니다.

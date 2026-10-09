@@ -220,10 +220,61 @@ def test_prepare():
     print("전처리 통과")
 
 
+def test_counterfactual():
+    """정답을 아는 가짜 자료로 "없었다면" 모형을 확인한다.
+
+    세전 공급가 = 0.3·국제가(같은 주) + 0.5·(1주 전) + 0.2·(2주 전) + 마진,
+    마진은 앞쪽 200주 60원, 뒤쪽 200주 100원으로 커지게 만든다.
+    최근 마진 모형은 비중 (0.3, 0.5, 0.2) 와 마진 100원을 거의 되찾아야 하고,
+    상한제 기간의 세후 값은 '× 1.1 + 유류세' 를 몇 원 안에서 맞혀야 한다.
+    (마진이 뛰면 수준 회귀의 비중이 조금 흔들리므로 정확히 같지는 않다)
+    """
+    import numpy as np
+    import counterfactual as cf_mod
+    weeks = pd.date_range("2015-01-03", periods=420, freq="W-SAT")
+    intl = pd.Series(np.random.default_rng(0).normal(0, 30, len(weeks)).cumsum() + 600, index=weeks)
+    margin = pd.Series(np.where(np.arange(len(weeks)) < 200, 60.0, 100.0), index=weeks)
+    pretax = 0.3 * intl + 0.5 * intl.shift(1) + 0.2 * intl.shift(2) + margin
+    policy = weeks >= weeks[400]
+    weekly = pd.DataFrame({"in_policy": policy}, index=weeks)
+    for fuel in cfg.FUELS:
+        weekly[f"{fuel}_intl_krw_l"] = intl
+        weekly[f"{fuel}_supply_pretax"] = pretax.where(~policy)        # 상한제 기간은 관측하지 않은 것으로
+        weekly[f"{fuel}_supply_aftertax"] = None
+        weekly[f"{fuel}_tax"] = 700.0
+        weekly[f"{fuel}_cap"] = 1500.0
+    X, y = cf_mod.training_data(weekly, "gasoline")
+    params = cf_mod.fit(X, y, "recent_margin")
+    assert np.isclose(params["weights"].sum(), 1.0)
+    assert np.allclose(params["weights"], [0.3, 0.5, 0.2], atol=0.05) and abs(params["const"] - 100) < 1
+    out, models = cf_mod.build_counterfactual(weekly)
+    week = weeks[410]
+    assert abs(out.loc[week, "gasoline_cf_aftertax"] - (pretax[week] * 1.1 + 700)) < 5
+    assert out.loc[week, "gasoline_cf_low"] <= out.loc[week, "gasoline_cf_aftertax"] <= out.loc[week, "gasoline_cf_high"]
+    # 마진이 커진 자료에서는 11년 상수 하나인 기본 회귀가 낮게 예측해야 한다 (bias < 0)
+    score = models[models["fuel"] == "gasoline"].set_index("model")
+    assert score.loc["baseline", "bias"] < score.loc["recent_margin", "bias"] <= 1e-6
+    # 공급가가 비어 있는 상한제 기간의 주는 모두 잠정으로 표시된다
+    assert out["provisional"].sum() == policy.sum() and not out.loc[~policy, "provisional"].any()
+
+    # 근거 점검 (counterfactual_check.py)
+    import counterfactual_check as chk
+    # 차분 회귀는 마진이 한 번 뛰어도 흔들리지 않으므로 비중을 수준 회귀보다 더 정확히 되찾는다
+    diff = chk.fit_diff(X, y)
+    assert np.allclose(diff["weights"], [0.3, 0.5, 0.2], atol=0.01) and abs(diff["const"] - 100) < 1
+    # 민감도 표의 '채택값' 은 counterfactual.py 의 격차와 같아야 한다
+    gaps, _ = chk.sensitivity(weekly)
+    expected = (out["gasoline_cf_aftertax"] - out["gasoline_cap"])[policy]
+    assert np.allclose(gaps["gasoline_gap"], expected)
+    assert (gaps["gasoline_gap_min"] <= gaps["gasoline_gap"]).all() and (gaps["gasoline_gap"] <= gaps["gasoline_gap_max"]).all()
+    print("\"없었다면\" 모형 통과")
+
+
 if __name__ == "__main__":
     test_week_label()
     test_input_files()
     test_prepare()
+    test_counterfactual()
     test_ecos()
     test_kosis()
     test_opinet()

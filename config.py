@@ -6,6 +6,8 @@ None 으로 둔 값은 직접 확인해서 채워야 하는 항목이다.
 from pathlib import Path
 import os
 
+import pandas as pd
+
 # ── 폴더 ────────────────────────────────────────────────────────────────
 BASE_DIR = Path(__file__).resolve().parent
 INPUT_DIR = BASE_DIR / "input"               # 오피넷에서 내려받은 CSV 를 넣는 곳
@@ -16,6 +18,7 @@ CAPS_FILE = BASE_DIR / "caps.csv"            # 차수별 최고가격 (직접 �
 # ── 기간 ────────────────────────────────────────────────────────────────
 START_DATE = "2015-01-01"      # 학습 자료 시작일
 POLICY_START = "2026-03-13"    # 석유 최고가격제 시행일
+TODAY = pd.Timestamp.today().normalize()   # 수집·전처리가 같은 '오늘'을 쓰도록 한곳에서 정한다
 
 
 # ── API 키: 코드에 직접 쓰지 않고 환경변수 또는 .env 에서 읽는다 ─────────

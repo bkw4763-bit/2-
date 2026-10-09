@@ -9,7 +9,6 @@ offline=True 이면 호출하지 않고 저장본만 읽는다. (시연 중 와�
 import io
 import re
 import time
-from datetime import date
 from urllib.parse import quote
 
 import pandas as pd
@@ -17,7 +16,7 @@ import requests
 
 import config as cfg
 
-TODAY = pd.Timestamp(date.today())
+TODAY = cfg.TODAY
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -247,8 +246,13 @@ def _opinet_rows(endpoint, extra=None):
     key = cfg.get_key("opinet")
     if not key:
         raise RuntimeError("OPINET_API_KEY 없음")
-    params = {"certkey": key, "out": "json", **(extra or {})}
-    return http_get(f"{OPINET_URL}/{endpoint}", params=params).json()["RESULT"]["OIL"]
+    # 인증키 변수 이름은 'code' 다. ('certkey' 로 보내면 오류 없이 빈 목록이 온다. 2026-10-10 확인)
+    params = {"code": key, "out": "json", **(extra or {})}
+    rows = http_get(f"{OPINET_URL}/{endpoint}", params=params).json()["RESULT"]["OIL"]
+    if not rows:
+        # 오피넷은 틀린 키에도 오류 대신 빈 목록을 보낸다
+        raise RuntimeError("빈 목록. 키 오타이거나 하루 호출 한도(300건) 초과일 가능성")
+    return rows
 
 
 def _opinet_fuel(row):

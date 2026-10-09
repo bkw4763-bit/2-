@@ -1,4 +1,4 @@
-"""수집 → 전처리 실행 스크립트.
+"""수집 → 전처리 → "없었다면" 가격 실행 스크립트.
 
 준비
   1) 오피넷에서 내려받은 CSV 네 개를 input 폴더에 넣는다.
@@ -15,6 +15,7 @@ import pandas as pd
 
 import collect
 import config as cfg
+import counterfactual
 import prepare
 
 
@@ -47,6 +48,13 @@ def main():
         empty = [cfg.FUELS[f]["ko"] for f, v in table.items() if v is None]
         if empty:
             print(f"  {name}: {', '.join(empty)} 미입력 (config.py)")
+
+    print("\n[5] \"없었다면\" 가격 (모형 비교표: python counterfactual.py, 근거 점검·그림: python counterfactual_check.py)")
+    cf, models = counterfactual.run()
+    chosen = models[models["model"] == counterfactual.CHOSEN].set_index("fuel")
+    print("  검증 평균 오차(원/리터):", ", ".join(f"{cfg.FUELS[f]['ko']} {chosen.loc[f, 'MAE']:.1f}" for f in cfg.FUELS))
+    print("  최근 4주 격차(\"없었다면\" 세후 공급가 − 상한):")
+    print(counterfactual.gap_table(cf).tail(4).to_string())
 
 
 if __name__ == "__main__":

@@ -11,7 +11,7 @@ import pandas as pd
 
 import config as cfg
 
-TODAY = pd.Timestamp.today().normalize()
+TODAY = cfg.TODAY
 
 
 # ── 직접 입력 표 읽기 ───────────────────────────────────────────────────
@@ -77,8 +77,8 @@ def weekly_supply(raw):
 
 
 # ── 일별 표 ─────────────────────────────────────────────────────────────
-def build_daily_panel(raw):
-    """모든 자료를 날짜 기준으로 묶는다."""
+def build_daily_panel(raw, supply):
+    """모든 자료를 날짜 기준으로 묶는다. supply 는 weekly_supply() 의 결과(유류세 역산에 쓴다)."""
     index = pd.date_range(cfg.START_DATE, TODAY, freq="D")
     panel = pd.DataFrame(index=index)
     panel.index.name = "date"
@@ -91,7 +91,7 @@ def build_daily_panel(raw):
     panel["brent_usd_bbl"] = to_daily(raw.get("fred_brent_usd_bbl"), index)
     panel["brent_krw_l"] = panel["brent_usd_bbl"] / cfg.BARREL_L * panel["fx"]
 
-    caps, supply = load_caps(), weekly_supply(raw)
+    caps = load_caps()
     for fuel in cfg.FUELS:
         # 국제 제품가(싱가포르): 달러/배럴 → 원/리터
         panel[f"{fuel}_intl_usd_bbl"] = to_daily(one_fuel(raw.get("opinet_intl"), fuel), index, "usd_bbl")
@@ -112,14 +112,13 @@ def build_daily_panel(raw):
 
 
 # ── 주별 표 ─────────────────────────────────────────────────────────────
-def build_weekly_panel(daily, raw):
+def build_weekly_panel(daily, supply):
     """일별 표를 일~토 주평균으로 줄이고 정유사 공급가를 붙인다. 인덱스는 주의 마지막 날(토요일)."""
     numeric = daily.drop(columns=["round", "in_policy"])
     weekly = numeric.resample("W-SAT").mean()
     weekly.index.name = "week_end"
     weekly.insert(0, "week_start", weekly.index - pd.Timedelta(days=6))
     weekly.insert(1, "days", numeric["fx"].resample("W-SAT").size())      # 7 이 아니면 덜 찬 주
-    supply = weekly_supply(raw)
     for fuel in cfg.FUELS:
         weekly[f"{fuel}_cap_days"] = daily[f"{fuel}_cap"].resample("W-SAT").count()   # 상한이 걸린 날 수
         for name in ("supply_pretax", "supply_aftertax"):
@@ -211,8 +210,9 @@ def build_latest(daily, raw):
 def prepare_all(raw):
     """모든 표를 만들어 data/processed 에 저장한다."""
     cfg.OUT_DIR.mkdir(parents=True, exist_ok=True)
-    daily = build_daily_panel(raw)
-    weekly = build_weekly_panel(daily, raw)
+    supply = weekly_supply(raw)                  # 주간 공급가와 역산한 유류세. 일별·주별 표가 함께 쓴다
+    daily = build_daily_panel(raw, supply)
+    weekly = build_weekly_panel(daily, supply)
     monthly = build_monthly_panel(daily, raw)
     rounds = build_round_table(daily, weekly)
     latest = build_latest(daily, raw)
