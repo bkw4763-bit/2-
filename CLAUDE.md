@@ -95,7 +95,7 @@
 
 합의된 알고리즘 다섯 단계와 검증, 화면이다. 파일 이름은 제안이다.
 
-1. **유종별 "없었다면" 가격** (`counterfactual.py`, **완료**): 상한제 이전 주별 자료로 `{fuel}_supply_pretax` 를 `{fuel}_intl_krw_l` 의 같은 주·1주 전·2주 전 값에 회귀한다. 계수는 합이 1이 되도록 나눠 시차 비중으로만 쓰고, 상수(마진)는 상한제 직전 52주 평균으로 다시 잡는다('최근 마진' 모형). 처음 합의한 11년 전체 회귀는 비교용으로 남겼다. `× 1.1 + {fuel}_tax` 로 세후로 바꾸고, 기점 이동 검증 오차의 5~95% 분위로 90% 구간을 붙인다. 공급가 미공개 주는 `provisional`. 결과는 `counterfactual.csv`, `counterfactual_models.csv`. 근거 점검은 `counterfactual_checks.csv`, `counterfactual_sensitivity.csv`, `counterfactual.png`. 머신러닝 비교는 넣지 않기로 했다(결과에 필요 없고, 학습 범위 밖 가격을 예측하지 못함).
+1. **유종별 "없었다면" 가격** (`counterfactual.py`, **완료**): 상한제 이전 주별 자료로 `{fuel}_supply_pretax` 를 `{fuel}_intl_krw_l` 의 같은 주·1주 전·2주 전 값에 회귀한다. 계수는 합이 1이 되도록 나눠 시차 비중으로만 쓰고, 상수(마진)는 상한제 직전 52주 평균으로 다시 잡는다('최근 마진' 모형). 처음 합의한 11년 전체 회귀는 비교용으로 남겼다. `× 1.1 + {fuel}_tax` 로 세후로 바꾸고, 기점 이동 검증 오차의 5~95% 분위로 90% 구간을 붙인다. 공급가 미공개 주는 `provisional`. 결과는 `counterfactual.csv`, `counterfactual_models.csv`. 근거 점검은 `counterfactual_checks.csv`, `counterfactual_sensitivity.csv`, 그림은 `counterfactual.png`(위 = 가격 수준, 아래 = 유종별 격차). 머신러닝 비교는 넣지 않기로 했다(결과에 필요 없고, 학습 범위 밖 가격을 예측하지 못함).
 2. **격차와 재정 부담** (`fiscal.py`): 격차 = "없었다면" 세후 공급가 − 상한. 하루 재정 부담 = 격차 × `config.DAILY_VOLUME_L`.
 3. **물가 영향** (`cpi.py`): 소매가 상승 = 상한 인상폭 × 반영률(위 표에서 추정). 물가 기여도 = `config.CPI_WEIGHTS` × 소매가 상승률.
 4. **차수 결정 최적화** (`optimize.py`): 상태 = 유종별 격차·유가·환율. 행동 = 유종별 조정 폭(−60, 0, +30, +60, +90, +120원). 제약 = 월 물가 기여도 한도와 차수당 최대 인상폭. 목표 = 6개 차수 누적 재정 부담 최소화. 유가 경로를 수백 개 무작위로 만들어 평균 비용이 가장 낮은 첫 행동을 고른다.

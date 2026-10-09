@@ -6,7 +6,7 @@ counterfactual.py 의 모형이 왜 타당한지, 심사에서 나올 질문 순
   3. 변수·시차 선택 시차 1~5개, 원유(브렌트) 대 제품가를 같은 기점 이동 검증으로 비교한다
   4. 구간 적중률    2018~2021 기점의 오차로 만든 90% 구간이 2022년 이후 기점에서 몇 % 맞았나
   5. 민감도         시차 비중 방식(수준/차분)과 마진 기간(26/52/104주)을 바꿔도 격차가 유지되나
-  6. 그림           실제 세후 공급가, 상한, "없었다면" 가격과 90% 구간
+  6. 그림           위 = 실제 세후 공급가, 상한, "없었다면" 가격과 90% 구간 / 아래 = 상한제 기간 유종별 격차
 결과: data/processed/counterfactual_checks.csv, counterfactual_sensitivity.csv, counterfactual.png
 """
 import warnings
@@ -23,6 +23,7 @@ from statsmodels.tsa.stattools import adfuller, coint
 
 import config as cfg
 import counterfactual as cf
+import prepare
 
 GOV_CHECK_WEEK = "2026-09-12"     # 정부 설명(9/18) 직전에 공급가가 확정된 주. 정부 수치와 대조한다
 SPLIT_DATE = "2022-01-01"         # 구간 적중률: 이 날 이전 기점으로 구간을 만들고, 이후 기점에서 맞았는지 본다
@@ -36,7 +37,7 @@ SECTIONS = {
 }
 # 그림 색: 기준 팔레트(dataviz 스킬)의 1·2번 범주색과 글자·눈금색
 BLUE, ORANGE = "#2a78d6", "#eb6834"
-INK, INK_2, MUTED, GRID, BASE = "#0b0b0b", "#52514e", "#898781", "#e1e0d9", "#c3c2b7"
+INK, INK_2, MUTED, GRID, BASE, SURFACE = "#0b0b0b", "#52514e", "#898781", "#e1e0d9", "#c3c2b7", "#fcfcfb"
 
 
 # ── 도구 ────────────────────────────────────────────────────────────────
@@ -152,35 +153,85 @@ def sensitivity(weekly):
 
 
 # ── 점검 6: 그림 ────────────────────────────────────────────────────────
-def plot(result, path):
-    """유종별로 실제 세후 공급가, 상한, "없었다면" 세후 공급가와 90% 구간을 그린다."""
-    plt.rcParams.update({"font.family": "Malgun Gothic", "axes.unicode_minus": False})   # 윈도 한글 글꼴
+def style_axis(ax, title, date_format):
+    """모든 칸을 같은 모양으로 꾸민다: 칸 제목, 옅은 가로 눈금선, 위·오른쪽 테두리 없음, 천 단위 쉼표."""
+    ax.set_facecolor(SURFACE)
+    ax.set_title(title, loc="left", fontsize=13, color=INK)
+    ax.grid(axis="y", color=GRID, lw=0.6)
+    ax.set_axisbelow(True)
+    for side in ("top", "right"):
+        ax.spines[side].set_visible(False)
+    for side in ("left", "bottom"):
+        ax.spines[side].set_color(BASE)
+    ax.tick_params(colors=MUTED, labelsize=9, labelleft=True)
+    ax.yaxis.set_major_formatter(matplotlib.ticker.FuncFormatter(lambda v, _: f"{v:,.0f}"))
+    ax.xaxis.set_major_formatter(mdates.DateFormatter(date_format))
+
+
+def draw_levels(ax, result, fuel):
+    """위 칸: 실제 세후 공급가, 상한, "없었다면" 세후 공급가와 90% 구간 (상한제 전 약 8개월부터)."""
     view = result[result.index >= PLOT_START]
-    fig, axes = plt.subplots(1, 3, figsize=(15, 4.8), facecolor="#fcfcfb")
-    for ax, fuel in zip(axes, cfg.FUELS):
-        ax.set_facecolor("#fcfcfb")
-        ax.fill_between(view.index, view[f"{fuel}_cf_low"], view[f"{fuel}_cf_high"],
-                        color=ORANGE, alpha=0.15, linewidth=0, label="90% 구간")
-        ax.plot(view.index, view[f"{fuel}_cf_aftertax"], color=ORANGE, lw=1.6, label='"없었다면" 세후 공급가')
-        ax.plot(view.index, view[f"{fuel}_supply_aftertax"], color=BLUE, lw=1.6, label="실제 세후 공급가")
-        ax.plot(view.index, view[f"{fuel}_cap"], color=INK_2, lw=1.2, ls="--", label="상한")
-        ax.axvline(pd.Timestamp(cfg.POLICY_START), color=MUTED, lw=0.8)
-        ax.text(pd.Timestamp(cfg.POLICY_START), 0.98, " 상한제 시행", transform=ax.get_xaxis_transform(),
-                color=MUTED, fontsize=9, va="top")
-        ax.set_title(cfg.FUELS[fuel]["ko"], loc="left", fontsize=13, color=INK)
-        ax.grid(axis="y", color=GRID, lw=0.6)
-        ax.set_axisbelow(True)
-        for side in ("top", "right"):
-            ax.spines[side].set_visible(False)
-        for side in ("left", "bottom"):
-            ax.spines[side].set_color(BASE)
-        ax.tick_params(colors=MUTED, labelsize=9)
-        ax.yaxis.set_major_formatter(matplotlib.ticker.FuncFormatter(lambda v, _: f"{v:,.0f}"))
-        ax.xaxis.set_major_formatter(mdates.DateFormatter("%y.%m"))
-    handles, labels = axes[0].get_legend_handles_labels()
-    fig.legend(handles, labels, loc="upper right", ncol=4, frameon=False, fontsize=10, labelcolor=INK_2)
-    fig.suptitle("상한제가 없었다면: 정유사 세후 공급가 (원/리터, 주별)", x=0.01, ha="left", fontsize=14, color=INK)
-    fig.tight_layout(rect=(0, 0, 1, 0.93))
+    ax.fill_between(view.index, view[f"{fuel}_cf_low"], view[f"{fuel}_cf_high"],
+                    color=ORANGE, alpha=0.15, linewidth=0, label="90% 구간")
+    ax.plot(view.index, view[f"{fuel}_cf_aftertax"], color=ORANGE, lw=1.6, label='"없었다면" 세후 공급가')
+    ax.plot(view.index, view[f"{fuel}_supply_aftertax"], color=BLUE, lw=1.6, label="실제 세후 공급가")
+    ax.plot(view.index, view[f"{fuel}_cap"], color=INK_2, lw=1.2, ls="--", label="상한")
+    ax.axvline(pd.Timestamp(cfg.POLICY_START), color=MUTED, lw=0.8)
+    ax.text(pd.Timestamp(cfg.POLICY_START), 0.98, " 상한제 시행", transform=ax.get_xaxis_transform(),
+            color=MUTED, fontsize=9, va="top")
+    style_axis(ax, cfg.FUELS[fuel]["ko"], "%y.%m")
+
+
+def draw_gap(ax, result, fuel, caps):
+    """아래 칸: 상한제 기간의 격차("없었다면" 세후 공급가 − 상한)와 90% 구간.
+
+    점선 부분은 공급가가 아직 공개되지 않은 잠정 주이고, 회색 세로선은 상한을 바꾼 날이다.
+    """
+    policy = result[result["in_policy"]]
+    firm_end = policy.index[~policy["provisional"]][-1]                    # 공급가가 공개된 마지막 주
+    gap = policy[f"{fuel}_cf_aftertax"] - policy[f"{fuel}_cap"]
+    ax.fill_between(policy.index, policy[f"{fuel}_cf_low"] - policy[f"{fuel}_cap"],
+                    policy[f"{fuel}_cf_high"] - policy[f"{fuel}_cap"], color=ORANGE, alpha=0.15, linewidth=0)
+    ax.plot(gap[:firm_end].index, gap[:firm_end], color=ORANGE, lw=1.8)
+    ax.plot(gap[firm_end:].index, gap[firm_end:], color=ORANGE, lw=1.8, ls=":")            # 잠정 구간
+    ax.axhline(0, color=BASE, lw=1)
+    # 상한을 바꾼 차수 (1차 시행과, 금액이 그대로인 동결 차수는 표시하지 않는다)
+    moved = caps.assign(change=caps[fuel].diff()).query("change != 0").dropna(subset=["change"])
+    for _, row in moved.iterrows():
+        ax.axvline(row["start_date"], color=MUTED, lw=0.8, ls="--")
+        ax.text(row["start_date"], 0.98, f" {row['round']}차 {row['change']:+.0f}원",
+                transform=ax.get_xaxis_transform(), color=MUTED, fontsize=9, va="top")
+    # 숫자는 마지막 확정 주와 최근 잠정 주에만 단다
+    ax.annotate(f"{gap[firm_end]:,.0f}", (firm_end, gap[firm_end]), textcoords="offset points",
+                xytext=(-6, 8), ha="right", fontsize=10, color=INK)
+    ax.annotate(f"{gap.iloc[-1]:,.0f}\n(잠정)", (gap.index[-1], gap.iloc[-1]), textcoords="offset points",
+                xytext=(4, -4), ha="left", va="top", fontsize=9, color=INK_2)
+    style_axis(ax, f"{cfg.FUELS[fuel]['ko']} 격차", "%m월")
+
+
+def plot(result, path):
+    """유종별 2행 그림을 한 장으로 저장한다. 위 = 가격 수준, 아래 = 격차.
+
+    격차 칸 세 개는 세로축 눈금을 같게 두어 유종끼리 크기를 바로 비교할 수 있게 한다.
+    """
+    plt.rcParams.update({"font.family": "Malgun Gothic", "axes.unicode_minus": False})   # 윈도 한글 글꼴
+    fig, axes = plt.subplots(2, 3, figsize=(15, 9.2), facecolor=SURFACE)
+    for ax in axes[1, 1:]:
+        ax.sharey(axes[1, 0])
+    caps = prepare.load_caps()
+    for col, fuel in enumerate(cfg.FUELS):
+        draw_levels(axes[0, col], result, fuel)
+        draw_gap(axes[1, col], result, fuel, caps)
+    # 맨 위 줄 = 제목, 둘째 줄 = 범례(왼쪽)와 단위·잠정 설명(오른쪽)
+    # 제목의 빼기는 일반 하이픈으로 쓴다 (맑은 고딕에 수학 기호 '−' 가 없어 네모로 깨진다)
+    fig.suptitle('상한제가 없었다면: 정유사 세후 공급가(위)와 격차 = "없었다면" - 상한(아래)',
+                 x=0.01, y=0.995, ha="left", va="top", fontsize=14, color=INK)
+    handles, labels = axes[0, 0].get_legend_handles_labels()
+    fig.legend(handles, labels, loc="upper left", bbox_to_anchor=(0.004, 0.968), ncol=4,
+               frameon=False, fontsize=10, labelcolor=INK_2)
+    fig.text(0.99, 0.958, "원/리터, 주별 · 아래 점선 = 잠정(공급가 미공개 주)", ha="right", va="top",
+             fontsize=9.5, color=MUTED)
+    fig.tight_layout(rect=(0, 0, 1, 0.93), h_pad=2.5)
     fig.savefig(path, dpi=150)
     plt.close(fig)
 
