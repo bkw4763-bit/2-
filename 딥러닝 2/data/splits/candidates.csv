@@ -1,0 +1,16 @@
+﻿context_years,config_id,included_candidate,required_validation_origins,eligible_validation_origins,reason
+1,years_01,True,101,101,
+2,years_02,True,101,101,
+3,years_03,True,101,101,
+4,years_04,True,101,101,
+5,years_05,True,101,101,
+6,years_06,True,101,101,
+7,years_07,True,101,101,
+8,years_08,False,101,58,insufficient_full_validation_history_or_missing_inputs
+9,years_09,False,101,6,insufficient_full_validation_history_or_missing_inputs
+10,years_10,False,101,0,insufficient_full_validation_history_or_missing_inputs
+11,years_11,False,101,0,insufficient_full_validation_history_or_missing_inputs
+12,years_12,False,101,0,insufficient_full_validation_history_or_missing_inputs
+13,years_13,False,101,0,insufficient_full_validation_history_or_missing_inputs
+14,years_14,False,101,0,insufficient_full_validation_history_or_missing_inputs
+15,years_15,False,101,0,insufficient_full_validation_history_or_missing_inputs

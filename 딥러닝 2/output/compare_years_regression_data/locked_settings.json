@@ -1,0 +1,44 @@
+{
+  "source": "C:\\Users\\ohobe\\OneDrive\\Desktop\\경제 헤커톤\\data\\processed\\weekly_panel.csv",
+  "source_sha256": "0b8a02be3f700fda28a18a8ed918586a91211372fcc52a4376c8f15948e8e9f7",
+  "target": "supply_pretax",
+  "covariates": [
+    "intl_krw_l"
+  ],
+  "future_international_prices": "actual observed; ex-post conditional counterfactual",
+  "missing_data": "regression preprocessing unchanged; no additional KNN",
+  "context_candidates_weeks": [
+    780
+  ],
+  "accepted_context_weeks": [
+    780
+  ],
+  "chosen_context": "780",
+  "horizon_weeks": 43,
+  "split_rule": "chronological pre-policy 80/20; complete weeks only",
+  "history_start": "2015-01-10",
+  "pre_policy_end": "2026-03-07",
+  "total_weeks": 583,
+  "development_weeks": 466,
+  "test_weeks": 117,
+  "test_fraction": 0.2,
+  "test_start": "2023-12-16",
+  "validation_start": "2016-01-09",
+  "cv_step_weeks": 43,
+  "evaluation_rule": "non-overlapping policy-length blocks; test remainder scored separately",
+  "horizon_basis": "complete weekly intervals from policy start through year end",
+  "primary_test_weeks": 86,
+  "test_tail_start": "2025-08-09",
+  "test_tail_weeks": 31,
+  "common_validation_origins": true,
+  "test_context_update": "past observed targets available at each origin",
+  "previously_inspected_test_data": true,
+  "validation_cutoffs": 9,
+  "test_cutoffs": 2,
+  "weight_updates": false,
+  "public_release_delay_accounted": false,
+  "fixed_context_years": 15,
+  "context_selection": "none; user-fixed",
+  "short_history_rule": "use all available; record actual_context_weeks",
+  "policy_actual_context_weeks": 583
+}

@@ -1,0 +1,56 @@
+{
+  "spec": {
+    "schema_version": 3,
+    "data_start": "2015-01-01",
+    "validation_start": "2022-03-13",
+    "test_start": "2024-03-13",
+    "policy_start": "2026-03-13",
+    "time_frequency": "W-SAT",
+    "horizons_weeks": [
+      1,
+      2,
+      4
+    ],
+    "requested_context_years": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12,
+      13,
+      14,
+      15
+    ],
+    "step_weeks": 1,
+    "knn_neighbors": 5,
+    "knn_history_rows": 252,
+    "data_sha256": "82182c2af0a942aaa3adb4afb2c965aa1884f1c46e76e0ec07cc89b109292036",
+    "code_sha256": "cd8e3570fe7a1df9cc4ad0bb25f517a658f6d0ca9fccd7f8698190cc195f93bb"
+  },
+  "experiment_id": "7c4838b65ffe56dd",
+  "windows_sha256": "7f5d2cdbd4b38e5778b4fb8a3061c0ec2db26227341689967688f701ac0f524b",
+  "accepted_context_years": [
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7
+  ],
+  "validation_origins": 101,
+  "test_origins": 101,
+  "selection": "공통 기준일의 세 유종 동일 가중 4주 경로 MAE",
+  "test_rule": "검증으로 고정한 설정만 사용; 학습형 모델은 테스트 직전에 최종 refit 후 고정",
+  "timesfm": "사전학습 가중치 고정, 기준일마다 과거 문맥만 갱신",
+  "imputation": "과거 실측 KNN; 첫날만 최초 관측 초기화, 입력의 출처는 기준일 이하여야 함",
+  "information_assumption": "주간 실적 기준 사후 검증; 공급가의 다음 주 공개 지연과 사전학습 중복 미반영",
+  "policy_rule": "정책 이후는 모델 선택과 최종 테스트에서 제외"
+}

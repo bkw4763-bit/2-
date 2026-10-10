@@ -1,0 +1,2 @@
+﻿rank,model,config_id,context_years,mean_fuel_mae,mean_fuel_rmse,fuels,origins
+1,timesfm3,years_01,1,53.04903320312502,59.96947006488108,3,1

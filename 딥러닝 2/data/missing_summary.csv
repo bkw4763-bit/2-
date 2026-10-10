@@ -1,0 +1,13 @@
+﻿fuel,variable,missing_daily_before_fill,missing_weekly_after_fill,weeks
+diesel,supply_pretax,,0,612
+diesel,intl_usd,125.0,0,612
+diesel,fx,171.0,0,612
+diesel,intl_krw_l,,0,612
+gasoline,supply_pretax,,0,612
+gasoline,intl_usd,125.0,0,612
+gasoline,fx,171.0,0,612
+gasoline,intl_krw_l,,0,612
+kerosene,supply_pretax,,0,612
+kerosene,intl_usd,125.0,0,612
+kerosene,fx,171.0,0,612
+kerosene,intl_krw_l,,0,612
