@@ -82,7 +82,8 @@ def run(first, cf, now, ctx):
             cpi1 = contribution(cap, act, known, ctx)
         cap = cap + act
         week = cf[:, :, r * C.ROUND_WEEKS:(r + 1) * C.ROUND_WEEKS]
-        cost = (np.clip(week - cap[:, :, None], 0, None).sum(axis=2) * ctx["vol"] * 7).sum(axis=1)
+        vol = ctx["vol"][:, r * C.ROUND_WEEKS:(r + 1) * C.ROUND_WEEKS]               # (유종, 4주) 리터/일
+        cost = (np.clip(week - cap[:, :, None], 0, None) * vol * 7).sum(axis=(1, 2))
         total += cost
         if r == 0:
             first4 = cost
@@ -116,12 +117,39 @@ def optimize(cf, now, ctx):
 
 
 # 7. 계산에 쓰는 값 묶음. k = 유종별 "실효 인상 1원당 물가 기여도(%p)" = 가중치/1000 × 반영률 / 판매가 × 100
-def context(volume, weights, limit, retail, scale=1.0, mode=C.PASS_MODE):
+# vol = (유종, 주) 하루 판매량. 미래 각 주가 끝나는 달의 판매량(등유 겨울 증가 반영). --volume 을 주면 고정값.
+def context(volume, weights, limit, retail, scale=1.0, mode=C.PASS_MODE, last_week=None, cap0=None):
     pt = monthly_pass_through(mode, scale)
-    return {"cap0": np.array([C.CURRENT_CAP[f] for f in C.FUELS]),
-            "vol": np.array([volume[f] for f in C.FUELS]),
+    weeks = pd.date_range(last_week + pd.Timedelta(days=7), periods=C.ROUNDS * C.ROUND_WEEKS, freq="7D")
+    sales = C.load_sales()
+    vol = np.array([[(volume or C.daily_volume(d.to_period("M"), sales))[f] for d in weeks] for f in C.FUELS])
+    return {"cap0": np.array([(cap0 or C.CURRENT_CAP)[f] for f in C.FUELS]),
+            "vol": vol,
             "k": np.array([weights[f] / 1000 * pt[f] / retail[f] * 100 for f in C.FUELS]),
             "limit": limit}
+
+
+# 8. 과거 결정 재현: 2~10차 각 시행일에 그 전에 끝난 주의 국제가와 직전 상한만 알고 같은 규칙으로 권고를 냅니다.
+# 실제 조정(+210, −150, 동결)은 행동 목록 밖이므로 방향(인상·동결·인하)을 비교합니다.
+def replay(volume, weights, limit, n_paths=200):
+    from cpi import retail_weekly
+    intl_all, params, caps, retail_all = C.load_intl(), C.load_params(), C.load_caps(), retail_weekly()
+    weeks = C.ROUNDS * C.ROUND_WEEKS
+    sign = lambda v: "인상" if v > 0 else ("인하" if v < 0 else "동결")
+    rows = []
+    for r in caps.index[1:]:
+        day = caps.loc[r, "start"]
+        intl = intl_all[intl_all.index < day]
+        prev = {f: float(caps.loc[r - 1, f]) for f in C.FUELS}
+        retail = retail_all[retail_all.index < day].iloc[-1].to_dict()
+        cf, now = counterfactual_paths(intl, simulate_intl(intl, weeks, n_paths=n_paths), params)
+        ctx = context(volume, weights, limit, retail, last_week=intl.index[-1], cap0=prev)
+        rec = best(optimize(cf, now, ctx)[0])
+        actual = {f: float(caps.loc[r, f]) - prev[f] for f in C.FUELS}
+        rows.append({"차수": r, "시행일": day.date(), **{f"격차_{C.KO[f]}": round(now[i] - prev[f]) for i, f in enumerate(C.FUELS)},
+                     "실제": "/".join(f"{actual[f]:+.0f}" for f in C.FUELS), "권고": "/".join(f"{v:+d}" for v in rec),
+                     "방향 일치": all(sign(actual[f]) == sign(rec[i]) for i, f in enumerate(C.FUELS))})
+    return pd.DataFrame(rows)
 
 
 def best(table):
@@ -135,11 +163,12 @@ def main():
     ap.add_argument("--weights", help="소비자물가 가중치(1000 기준): 휘발유,경유,등유")
     ap.add_argument("--cpi-limit", type=float, default=C.CPI_LIMIT_PP, help="월 물가 기여도 한도(%%p)")
     ap.add_argument("--sensitivity", action="store_true", help="반영률·한도·추출 기간을 바꿔 권고 유지 여부 확인")
+    ap.add_argument("--replay", action="store_true", help="2~10차 과거 결정 재현")
     ap.add_argument("--out", default=str(C.OUT_DIR))
     args = ap.parse_args()
     volume = C.parse_triplet(args.volume, C.DAILY_VOLUME_L)
     weights = C.parse_triplet(args.weights, C.CPI_WEIGHTS)
-    missing = [n for n, v in [("하루 판매량(--volume)", volume), ("물가 가중치(--weights)", weights),
+    missing = [n for n, v in [("물가 가중치(--weights)", weights),
                               ("월 물가 기여도 한도(--cpi-limit)", args.cpi_limit)] if v is None]
     if missing:
         raise SystemExit("미확인 값이 있어 최적화를 멈춥니다: " + ", ".join(missing))
@@ -149,7 +178,7 @@ def main():
     retail, retail_week = C.latest_retail()
     weeks = C.ROUNDS * C.ROUND_WEEKS
     cf, now = counterfactual_paths(intl, simulate_intl(intl, weeks), params)
-    ctx = context(volume, weights, args.cpi_limit, retail)
+    ctx = context(volume, weights, args.cpi_limit, retail, last_week=intl.index[-1])
     table, totals, freeze_total = optimize(cf, now, ctx)
 
     out = Path(args.out)
@@ -176,12 +205,18 @@ def main():
                  ("반영률 4주 값만", dict(mode="4w")),
                  ("한도 ×0.5", dict(limit=args.cpi_limit * 0.5)), ("한도 ×1.5", dict(limit=args.cpi_limit * 1.5))]
         for name, kw in cases:
-            c = context(volume, weights, kw.get("limit", args.cpi_limit), retail, kw.get("scale", 1.0), kw.get("mode", C.PASS_MODE))
+            c = context(volume, weights, kw.get("limit", args.cpi_limit), retail, kw.get("scale", 1.0),
+                        kw.get("mode", C.PASS_MODE), intl.index[-1])
             print(f"  {name}: {best(optimize(cf, now, c)[0])}")
         cf3, now3 = counterfactual_paths(intl, simulate_intl(intl, weeks, start=pd.Timestamp("2023-03-01")), params)
         print(f"  추출 기간 최근 3년: {best(optimize(cf3, now3, ctx)[0])}")
         cf2, now2 = counterfactual_paths(intl, simulate_intl(intl, weeks, seed=C.SEED + 1), params)
         print(f"  다른 난수 시드: {best(optimize(cf2, now2, ctx)[0])}")
+    if args.replay:
+        rep = replay(volume, weights, args.cpi_limit)
+        rep.to_csv(out / "optimize_replay.csv", index=False, encoding="utf-8-sig")
+        print(f"\n[과거 결정 재현] 조정 폭 휘발유/경유/등유. 방향 일치 {int(rep['방향 일치'].sum())}/{len(rep)}")
+        print(rep.to_string(index=False))
     print(f"\n저장: {out}")
 
 

@@ -32,9 +32,14 @@ RESPONSE = {
 }
 
 # ── 미확인 값: 출처 확인 후 채웁니다 (명령행 --volume, --weights, --cpi-limit 로도 넣을 수 있음) ──
-DAILY_VOLUME_L = None   # {"gasoline": 리터/일, "diesel": ..., "kerosene": ...}  석유공사 석유수급통계
-CPI_WEIGHTS = None      # {"gasoline": 1000 기준 가중치, ...}                    국가데이터처 소비자물가 가중치
+DAILY_VOLUME_L = None   # 고정값을 쓰려면 {"gasoline": 리터/일, ...}. None 이면 월별 판매량 파일(daily_volume)을 씁니다
+# 소비자물가 품목 가중치(2020년 기준, 1000 기준). csv/cpi_weights_2020.xlsx 표1: 휘발유 24.1, 경유 16.3, 등유 2.4
+CPI_WEIGHTS = {"gasoline": 24.1, "diesel": 16.3, "kerosene": 2.4}
 CPI_LIMIT_PP = None     # 월 물가 기여도 한도(%p). 팀 결정
+
+SALES_PATH = PROJECT_DIR / "csv" / "petroleum_sales_monthly_202608.csv"   # 월별 판매량(천 배럴로 판단, 파일에 단위 표기 없음)
+CAPS_PATH = PROJECT_DIR / "csv" / "caps.csv"                              # 1~10차 시행일과 상한
+BBL_L = 158.987                                                            # 1배럴 = 158.987리터
 
 # ── 최적화 설정 (합의안 + 제안값) ─────────────────────────────────────────────
 ACTIONS = np.array([-60, 0, 30, 60, 90, 120], dtype=float)  # 유종별 조정 폭(원). 최대 인상폭 = 120원
@@ -99,3 +104,44 @@ def parse_triplet(text, default):
     if len(values) != 3:
         raise SystemExit("값 3개(휘발유,경유,등유)를 쉼표로 넣으세요.")
     return dict(zip(FUELS, values))
+
+
+
+# 8. 월별 판매량 파일을 {Period(월): {유종: 천 배럴}} 표로 읽습니다. 비율 행([..])은 건너뜁니다.
+def load_sales():
+    raw = pd.read_csv(SALES_PATH, encoding="utf-8-sig")
+    rows, year = {}, None
+    for _, r in raw.iterrows():
+        label = str(r["월"])
+        if label in ("nan", "합계"):
+            continue
+        if "년" in label:
+            year, label = 2000 + int(label[:2]), label.split()[1]
+        rows[pd.Period(f"{year}-{label[:2]}", "M")] = {"gasoline": float(r["휘발유"]), "diesel": float(r["경유"]),
+                                                       "kerosene": float(r["등유"])}
+    return pd.DataFrame(rows).T.sort_index()
+
+
+# 9. 그 달의 하루 판매량(리터/일)입니다. 자료가 있는 달은 실제값(천 배럴 × 1000 × 158.987 ÷ 그 달 일수)을 씁니다.
+# 자료가 없는 달(9월 이후)은 '전년 동월 × 올해 상한제 기간(3~8월) 판매량 ÷ 전년 3~8월' 로 추정합니다.
+# 등유는 겨울에 판매량이 5~10배 늘어 계절을 반영해야 하고, 상한제 이후 판매량 감소도 함께 반영됩니다.
+def daily_volume(month, sales=None):
+    if DAILY_VOLUME_L:
+        return DAILY_VOLUME_L
+    sales = load_sales() if sales is None else sales
+    month = pd.Period(month, "M")
+    if month in sales.index:
+        kbbl = sales.loc[month]
+    else:
+        last = sales.index[-1]
+        cur = sales.loc[pd.Period(f"{last.year}-03", "M"):last].sum()
+        prev = sales.loc[pd.Period(f"{last.year - 1}-03", "M"):last - 12].sum()
+        same = month - 12 * ((month.year - last.year) + (1 if month.month > last.month else 0))
+        kbbl = sales.loc[same] * cur / prev
+    return {f: kbbl[f] * 1000 * BBL_L / month.days_in_month for f in FUELS}
+
+
+# 10. 1~10차 상한표입니다.
+def load_caps():
+    caps = pd.read_csv(CAPS_PATH, encoding="utf-8-sig", parse_dates=["start"])
+    return caps.set_index("round")
