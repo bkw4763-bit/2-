@@ -205,7 +205,9 @@ def main():
         out / "optimize_paths.csv", index_label="path", encoding="utf-8-sig", float_format="%.2f")
 
     pd.DataFrame({"fuel": C.FUELS, "cap": ctx["cap0"], "cf_now": now, "gap": now - ctx["cap0"], "action": rec,
-                  "cpi_limit": args.cpi_limit}).to_csv(out / "optimize_state.csv", index=False, encoding="utf-8-sig")
+                  "cpi_per_100won": ctx["k"] * 100, "cpi_limit": args.cpi_limit,
+                  "cost24_freeze": freeze_total.mean(), "cost24_rec": totals[tuple(float(v) for v in rec)].mean(),
+                  "cpi_rec": table.iloc[0]["물가 기여도(%p)"]}).to_csv(out / "optimize_state.csv", index=False, encoding="utf-8-sig")
     pd.set_option("display.width", 200)
     print(f"[4단계 상태] 국제가 기준 주 {intl.index[-1].date()}, 판매가 기준 {retail_week}")
     for i, f in enumerate(C.FUELS):

@@ -3,9 +3,12 @@
 #   optimize.png : 4단계 ① 11차 권고와 현재 격차  ② 216개 첫 행동의 물가-재정 맞바꿈  ③ 경로별 24주 재정 부담 분포
 #   checks.png   : 4단계 검증 ① 민감도(조건별 권고)  ② 과거 결정 재현(실제 조정 vs 권고)
 # 유종 색은 1단계 그림(counterfactual.png)과 같게 유종에 고정합니다. 실행: python policy/plots.py
+import logging
+
 import matplotlib
 
 matplotlib.use("Agg")
+logging.getLogger("matplotlib.font_manager").setLevel(logging.ERROR)   # 없는 글꼴을 건너뛸 때 나오는 경고 숨김
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
@@ -175,12 +178,60 @@ def plot_checks():
     plt.close(fig)
 
 
+# 5. 한 장 요약(발표용). 질문 하나에 그림 하나, 제목이 곧 결론입니다.
+#   ① 정부가 지금 리터당 얼마를 메워 주고 있고, 11차에 얼마를 올리나
+#   ② 같은 100원을 올려도 물가가 오르는 정도가 유종마다 다르다 → 휘발유는 조금, 등유는 많이 올리는 이유
+#   ③ 권고대로 하면 정부 부담이 얼마나 줄고, 물가는 얼마나 오르나
+def plot_summary():
+    st = read("optimize_state.csv").set_index("fuel")
+    fig, (a, b, c) = plt.subplots(1, 3, figsize=(15, 4.8), gridspec_kw={"width_ratios": [1.2, 1, 0.9]})
+    y = np.arange(3)[::-1]
+    names = [C.KO[f] for f in C.FUELS]
+
+    for yi, f in zip(y, C.FUELS):
+        gap, act = st.loc[f, "gap"], st.loc[f, "action"]
+        a.barh(yi, gap, height=0.6, color=COLORS[f], alpha=0.22)
+        a.barh(yi, act, height=0.6, color=COLORS[f])
+        a.annotate(f"{act:+.0f}원 올림", (act, yi), xytext=(5, 0), textcoords="offset points", va="center", color=INK, fontsize=11, fontweight="bold")
+        a.annotate(f"정부가 메워 주는 돈 {gap:.0f}원", (gap, yi), xytext=(-5, 0), textcoords="offset points", va="center", ha="right", color=INK_2, fontsize=9)
+    a.set_yticks(y, names, fontsize=11)
+    a.set_xlabel("리터당 원")
+    a.grid(axis="y", visible=False)
+    a.set_title("① 11차 권고: 휘발유 +30원, 경유 +90원, 등유 +120원")
+
+    per100 = st["cpi_per_100won"]
+    for yi, f in zip(y, C.FUELS):
+        b.barh(yi, per100[f], height=0.6, color=COLORS[f])
+        b.annotate(f"{per100[f]:.3f}%p", (per100[f], yi), xytext=(5, 0), textcoords="offset points", va="center", color=INK, fontsize=11)
+    b.set_yticks(y, names, fontsize=11)
+    b.set_xlim(0, per100.max() * 1.35)
+    b.set_xlabel("상한을 100원 올렸을 때 소비자물가 상승 (%p)")
+    b.grid(axis="y", visible=False)
+    b.set_title("② 같은 100원이라도 휘발유가 물가를 가장 많이 올림")
+
+    freeze, rec = st["cost24_freeze"].iloc[0] / 1e12, st["cost24_rec"].iloc[0] / 1e12
+    bars = c.bar(["그대로 두면\n(동결)", "권고대로 하면"], [freeze, rec], width=0.55, color=[AXIS, "#e34948"])
+    for bar, v in zip(bars, [freeze, rec]):
+        c.annotate(f"{v:.2f}조 원", (bar.get_x() + bar.get_width() / 2, v), xytext=(0, 4), textcoords="offset points",
+                   ha="center", color=INK, fontsize=11, fontweight="bold")
+    c.set_ylim(0, freeze * 1.2)
+    c.set_ylabel("앞으로 24주 정부 부담 (조 원)")
+    c.tick_params(axis="x", labelsize=10)
+    c.grid(axis="x", visible=False)
+    saving = (freeze - rec) * 1e4                                       # 억 원
+    c.set_title(f"③ 정부 부담 약 {saving:,.0f}억 원 감소, 물가는 +{st['cpi_rec'].iloc[0]:.2f}%p")
+    fig.tight_layout()
+    fig.savefig(OUT / "summary.png", dpi=160)
+    plt.close(fig)
+
+
 def main():
     apply_style()
+    plot_summary()
     plot_cpi()
     plot_optimize()
     plot_checks()
-    print(f"저장: {OUT / 'cpi.png'}, {OUT / 'optimize.png'}, {OUT / 'checks.png'}")
+    print(f"저장: {OUT / 'summary.png'} (발표용 요약), {OUT / 'cpi.png'}, {OUT / 'optimize.png'}, {OUT / 'checks.png'}")
 
 
 if __name__ == "__main__":
