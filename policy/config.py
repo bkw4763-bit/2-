@@ -10,11 +10,12 @@ PROJECT_DIR = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_DIR / "regression" / "full_sample"))
 import counterfactual as cfm  # 1단계 회귀(주차 변환, 주별 표, 유종 정의)를 그대로 다시 씁니다
 
-CF_DIR = PROJECT_DIR / "results" / "regression" / "full_sample"
+CF_DIR = cfm.OUT_DIR                                     # 1단계 결과 폴더(환율 포함 모형: full_sample_exchange_rate)
 CF_PATH = CF_DIR / "counterfactual.csv"                  # 1단계 주별 "없었다면" 가격과 격차
-MODELS_PATH = CF_DIR / "counterfactual_models.csv"       # 1단계 계수(비중 w, 마진 m)
+MODELS_PATH = CF_DIR / "counterfactual_models.csv"       # 1단계 계수(마진 m, 국제가 비중 w, 환율 계수 b)
 INTL_PATH = PROJECT_DIR / "csv" / "international_petroleum_prices_2015011_2026101_krw.csv"  # 최신 국제가(원/리터)
 RETAIL_PATH = PROJECT_DIR / "csv" / "gas_station_weekly_prices.csv"                         # 주유소 주간 판매가
+FX_PATH = PROJECT_DIR / "csv" / "usd_krw_weekly_average.csv"                               # 원/달러 주간 평균 (1단계 입력과 같은 값, 10월 1주까지)
 OUT_DIR = PROJECT_DIR / "results" / "policy"
 
 FUELS = ["gasoline", "diesel", "kerosene"]
@@ -66,15 +67,24 @@ def load_cf():
     return cf
 
 
-# 3. 1단계 '최근 마진' 모형의 계수를 {유종: (마진 m, 비중 w[3])}로 돌려줍니다.
+# 3. 1단계 '최근 마진' 모형의 계수를 {유종: (마진 m, 국제가 비중 w[3], 환율 계수 b)}로 돌려줍니다.
 def load_params():
     m = pd.read_csv(MODELS_PATH, encoding="utf-8-sig")
     m = m[m["model"] == cfm.CHOSEN].set_index("fuel")
-    return {f: (float(m.loc[f, "const"]), m.loc[f, ["w_lag0", "w_lag1", "w_lag2"]].to_numpy(float)) for f in FUELS}
+    return {f: (float(m.loc[f, "const"]), m.loc[f, ["w_lag0", "w_lag1", "w_lag2"]].to_numpy(float),
+                float(m.loc[f, "w_exchange_rate"])) for f in FUELS}
 
 
-# 4. 국제가(원/리터) 주별 표. 공급가보다 최근 주까지 있어 결정 시점의 상태로 씁니다.
+# 4. 국제가(원/리터) 3유종과 원/달러 환율(fx)의 주별 표. 공급가보다 최근 주까지 있어 결정 시점의 상태로 씁니다.
+# 두 파일에 모두 있는 주만 남깁니다.
 def load_intl():
+    fx_raw = pd.read_csv(FX_PATH, encoding="utf-8-sig")
+    fx = pd.Series(fx_raw.iloc[:, 1].to_numpy(float), index=pd.DatetimeIndex([to_week_end(x) for x in fx_raw.iloc[:, 0]]))
+    intl = load_intl_prices()
+    return intl.assign(fx=fx.reindex(intl.index)).dropna()
+
+
+def load_intl_prices():
     raw = pd.read_csv(INTL_PATH, encoding="cp949")
     cols = {"gasoline": raw.columns[2], "diesel": raw.columns[4], "kerosene": raw.columns[3]}  # 92RON, 0.001%, 등유
     out = pd.DataFrame({f: raw[c].to_numpy(float) for f, c in cols.items()},
@@ -89,10 +99,10 @@ def weekly_retail_last():
     return {"gasoline": float(last.iloc[2]), "diesel": float(last.iloc[3]), "kerosene": float(last.iloc[4])}, str(last.iloc[0])
 
 
-# 6. "없었다면" 세후 공급가 = (m + w0·x_t + w1·x_(t−1) + w2·x_(t−2)) × 1.1 + 유류세.
-# x 의 마지막 축이 시간입니다. 앞 두 주는 시차용이라 결과 길이는 x 보다 2 짧습니다. (미래 경로에도 같은 식을 씁니다)
-def cf_aftertax(x, margin, w, tax):
-    pretax = margin + w[0] * x[..., 2:] + w[1] * x[..., 1:-1] + w[2] * x[..., :-2]
+# 6. "없었다면" 세후 공급가 = (m + w0·x_t + w1·x_(t−1) + w2·x_(t−2) + b·환율_t) × 1.1 + 유류세.
+# x(국제가)·fx(환율)의 마지막 축이 시간입니다. 앞 두 주는 시차용이라 결과 길이는 2 짧습니다. (미래 경로에도 같은 식을 씁니다)
+def cf_aftertax(x, fx, margin, w, b, tax):
+    pretax = margin + w[0] * x[..., 2:] + w[1] * x[..., 1:-1] + w[2] * x[..., :-2] + b * fx[..., 2:]
     return pretax * (1 + VAT) + tax
 
 

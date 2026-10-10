@@ -1,8 +1,8 @@
 # 4단계: 11차 상한 결정 최적화.
 # 미래 국제가 경로 500개를 만들고, 11차의 유종별 조정 폭 216가지(6³)마다 6차수(24주)를 모의 실행해
 # "물가 한도를 지키면서 평균 재정 부담이 가장 작은 첫 행동"을 권고합니다.
-#   - 경로: 상한제 이전 주간 국제가 변화율(로그)을 4주 묶음으로 뽑아 이어 붙임(블록 부트스트랩, 세 유종 같은 주 → 상관 유지)
-#   - "없었다면" 가격: 1단계 식 그대로 (m + w·국제가 시차) × 1.1 + 유류세
+#   - 경로: 상한제 이전 주간 국제가·환율 변화율(로그)을 4주 묶음으로 뽑아 이어 붙임(블록 부트스트랩, 같은 주 → 상관 유지)
+#   - "없었다면" 가격: 1단계 식 그대로 (m + w·국제가 3주 + b·환율) × 1.1 + 유류세
 #   - 12~16차: 단순 규칙(격차가 큰 유종부터, 물가 한도 안에서 격차까지 인상)
 #   - 모든 행동이 같은 경로를 씁니다(공통 난수). 행동 간 차이가 경로 운이 아니라 행동 때문이 되도록.
 # 실행: python policy/optimize.py [--cpi-limit 값] [--sensitivity] [--replay]   (한도를 안 주면 자료에서 정함, 9번 함수)
@@ -19,28 +19,33 @@ from cpi import effective_raise, monthly_pass_through
 
 
 
-# 1. 블록 부트스트랩으로 미래 국제가 경로를 만듭니다. 반환 (경로, 유종, 주) 원/리터.
+# 1. 블록 부트스트랩으로 미래 국제가·환율 경로를 만듭니다. 반환 (경로, 4, 주): 유종 3개 원/리터 + 환율(원/달러).
+# 국제가 3개와 환율을 같은 주에서 함께 뽑아 서로의 상관(환율이 오르면 원화 국제가도 오름)을 유지합니다.
 # 마지막 실제 값에 뽑은 로그 변화율을 누적해 곱하므로 가격이 음수가 되지 않습니다.
+SERIES = C.FUELS + ["fx"]
+
+
 def simulate_intl(intl, weeks, n_paths=C.N_PATHS, block=C.BLOCK, seed=C.SEED, start=C.BOOT_START):
-    hist = intl[(intl.index >= start) & (intl.index < C.POLICY_START)][C.FUELS]
+    hist = intl[(intl.index >= start) & (intl.index < C.POLICY_START)][SERIES]
     full = pd.date_range(hist.index[0], hist.index[-1], freq="W-SAT")
-    r = np.log(hist.reindex(full)).diff().to_numpy()[1:]           # (주, 유종). 빠진 주 앞뒤는 NaN
+    r = np.log(hist.reindex(full)).diff().to_numpy()[1:]           # (주, 4). 빠진 주 앞뒤는 NaN
     starts = [i for i in range(len(r) - block + 1) if np.isfinite(r[i:i + block]).all()]
     rng = np.random.default_rng(seed)
     n_blocks = -(-weeks // block)
     picks = rng.choice(starts, size=(n_paths, n_blocks))
-    steps = np.stack([np.concatenate([r[s:s + block] for s in row])[:weeks] for row in picks])  # (경로, 주, 유종)
-    last = intl[C.FUELS].iloc[-1].to_numpy()
+    steps = np.stack([np.concatenate([r[s:s + block] for s in row])[:weeks] for row in picks])  # (경로, 주, 4)
+    last = intl[SERIES].iloc[-1].to_numpy()
     return (last * np.exp(np.cumsum(steps, axis=1))).transpose(0, 2, 1)
 
 
 # 2. 경로별 주간 "없었다면" 세후 공급가 (경로, 유종, 주)와 결정 시점에 알고 있는 최신 값 (유종,)을 만듭니다.
-# 앞 두 주는 실제 국제가로 시차를 채웁니다.
+# 앞 두 주는 실제 국제가·환율로 시차를 채웁니다. 1단계와 같은 식(국제가 3주 + 같은 주 환율)입니다.
 def counterfactual_paths(intl, paths, params):
-    hist = intl[C.FUELS].iloc[-3:].to_numpy().T                     # (유종, 3주) 실제 최근 3주
-    x = np.concatenate([np.broadcast_to(hist[:, 1:], (len(paths), 3, 2)), paths], axis=2)
-    cf = np.stack([C.cf_aftertax(x[:, i], *params[f], C.FUEL_TAX[f]) for i, f in enumerate(C.FUELS)], axis=1)
-    now = np.array([C.cf_aftertax(hist[i], *params[f], C.FUEL_TAX[f])[0] for i, f in enumerate(C.FUELS)])
+    hist = intl[SERIES].iloc[-3:].to_numpy().T                      # (4, 3주) 실제 최근 3주
+    x = np.concatenate([np.broadcast_to(hist[:, 1:], (len(paths), 4, 2)), paths], axis=2)
+    fx, fx_hist = x[:, 3], hist[3]
+    cf = np.stack([C.cf_aftertax(x[:, i], fx, *params[f], C.FUEL_TAX[f]) for i, f in enumerate(C.FUELS)], axis=1)
+    now = np.array([C.cf_aftertax(hist[i], fx_hist, *params[f], C.FUEL_TAX[f])[0] for i, f in enumerate(C.FUELS)])
     return cf, now
 
 
@@ -155,7 +160,7 @@ def replay(volume, weights, limit, n_paths=200):
 # 9. 월 물가 기여도 한도를 자료에서 정합니다.
 # 한도 = 최근 달에 상한제가 눌러 두고 있는 물가(%p) ÷ 남은 차수(6).
 # 뜻: 상한제로 눌러 둔 물가 효과를 24주(6차수) 동안 같은 크기로 나눠 되돌리면, 한 번에 물가가 튀지 않고
-#     기간 끝에는 상한 없는 가격에 닿을 수 있습니다. 3단계 검증(3~8월 0.57%p, 정부 0.6%p)을 통과한 값에서 나옵니다.
+#     기간 끝에는 상한 없는 가격에 닿을 수 있습니다. 3단계 검증(3~8월 0.58%p, 정부 0.6%p)을 통과한 값에서 나옵니다.
 # 점검용으로 실제 2차(+210원) 인상의 물가 기여도도 돌려줍니다. 정부가 한 번 받아들인 최대 인상입니다.
 def derive_cpi_limit(weights, retail):
     from cpi import policy_effect, retail_weekly
