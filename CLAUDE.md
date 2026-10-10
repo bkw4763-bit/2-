@@ -47,6 +47,8 @@
 | `policy/optimize.py` | 4단계 11차 권고(216개 첫 행동 × 500 경로) → `results/policy/optimize_*.csv` |
 | `policy/plots.py` | 3·4단계 그림 → `results/policy/summary.png`(발표용 한 장 요약), 부록 `cpi.png`, `optimize.png`, `checks.png` |
 | `docs/presentation.html` | 발표 자료 (그림 포함 한 파일, 인터넷 없이 열림) |
+| `docs/presentation_final.pptx` | 팀 최종 발표 슬라이드 28장 (2~4단계 수치 수정, 17~28번 노트에 대본) |
+| `docs/script_2-4.md` | 분석 2~4단계 발표 대본 (약 3분) |
 | `docs/presentation_2-4.pptx` | 2~4단계 발표 슬라이드 12장 (팀 양식, 슬라이드 노트에 발표 대본) |
 | `docs/model_design.md` | 2~4단계 모형 설정과 실행 방법 |
 
