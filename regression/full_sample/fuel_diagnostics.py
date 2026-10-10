@@ -120,7 +120,7 @@ def ccf_series(changes):
 
 def ccf_checks(weekly, fuel, changes):
     ccf = ccf_series(changes)
-    coef = diff_regression(*diff_data(weekly, fuel, lags=PASS_LAGS)).params.to_numpy()
+    coef = diff_regression(*diff_data(weekly, fuel, lags=PASS_LAGS)).params.to_numpy()[:PASS_LAGS]
     cumulative = coef.cumsum()
     return {
         ("② 교차상관", "최고 상관 시차(주)"): ccf.idxmax(),

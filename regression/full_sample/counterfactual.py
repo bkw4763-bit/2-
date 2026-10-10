@@ -2,7 +2,7 @@
 # ① merged_weekly_data_clean.csv 불러오기: 주차 표기를 그 주의 마지막 날(토요일)로 바꿉니다.
 # ② 주별 표 만들기: 결측 행 제거로 빠진 주는 빈칸으로 되살려 시차가 실제 1·2주 전을 가리키게 합니다.
 # ③ 유류세 역산: 유류세 = 세후 공급가 − 1.1 × 세전 공급가
-# ④ 모형: 정책 이전 자료로 OLS → 시차 계수를 합이 1인 비중으로 → 마진은 정책 직전 52주 평균
+# ④ 모형: 국제가 3개 시차 + 같은 주 환율로 OLS → 국제가 계수만 합 1 → 마지막 52주 잔차로 상수 보정
 # ⑤ 검증: 2018년부터 13주마다 기점을 옮겨, 기점 이전 자료로 학습하고 다음 32주를 맞혀 봅니다.
 # ⑥ 결과 저장: results/regression/full_sample 폴더에 주별 "없었다면" 가격과 모형 비교표를 저장합니다.
 # 방법론: regression_method.md / 실행: python "regression/full_sample/counterfactual.py"
@@ -22,7 +22,8 @@ import pandas as pd
 # 상한은 세후 공급가에 걸리므로 "없었다면" 가격도 세후로 바꿔 실제 세후 공급가와 비교합니다.
 PROJECT_DIR = Path(__file__).resolve().parents[2]
 INPUT_PATH = PROJECT_DIR / "csv" / "merged_weekly_data_clean.csv"
-OUT_DIR = PROJECT_DIR / "results" / "regression" / "full_sample"
+OUT_DIR = PROJECT_DIR / "results" / "regression" / "full_sample_exchange_rate"
+EXCHANGE_COLUMN = "원달러환율_주간평균_원/달러 환율"
 POLICY_START = pd.Timestamp("2026-03-13")   # 최고가격제 시행일. 이 날이 든 주부터 학습에서 뺍니다
 VAT = 0.1
 LAGS = 3                                     # 같은 주, 1주 전, 2주 전 국제가
@@ -86,13 +87,14 @@ def load_weekly(path=INPUT_PATH):
     raw.index = pd.DatetimeIndex([week_end(label) for label in raw["주차"]], name="week_end")
     if raw.index.has_duplicates or not raw.index.is_monotonic_increasing:
         raise ValueError("주차가 중복되었거나 시간순이 아닙니다.")
-    columns = [spec[key] for spec in FUELS.values() for key in ("intl", "pretax", "aftertax")]
+    columns = [spec[key] for spec in FUELS.values() for key in ("intl", "pretax", "aftertax")] + [EXCHANGE_COLUMN]
     if raw[columns].isna().any().any():
         raise ValueError("결측이 남아 있습니다. 결측 행을 제거한 자료를 사용하세요.")
     full = pd.date_range(raw.index[0], raw.index[-1], freq="W-SAT", name="week_end")
     if not raw.index.isin(full).all():
         raise ValueError("주의 끝 날짜가 토요일이 아닌 주차가 있습니다.")
     weekly = pd.DataFrame({"주차": raw["주차"]}).reindex(full)
+    weekly["exchange_rate"] = raw[EXCHANGE_COLUMN].reindex(full)
     for fuel, spec in FUELS.items():
         weekly[f"{fuel}_intl_krw_l"] = raw[spec["intl"]].reindex(full)
         weekly[f"{fuel}_supply_pretax"] = raw[spec["pretax"]].reindex(full)
@@ -104,11 +106,31 @@ def load_weekly(path=INPUT_PATH):
 
 
 
-# 5. 국제가(원/리터)의 같은 주·1주 전·2주 전 값을 열로 늘어놓습니다. 열 이름은 lag0, lag1, lag2입니다.
+# 5. 국제가(원/리터)의 같은 주·1주 전·2주 전과 같은 주 환율을 사용합니다.
 # 주별 표가 달력상 연속이므로 shift(k)는 정확히 k주 전 값을 가리킵니다.
-def lagged_intl(weekly, fuel, lags=LAGS):
+def lagged_intl(weekly, fuel, lags=LAGS, include_exchange=True):
     series = weekly[f"{fuel}_intl_krw_l"]
-    return pd.DataFrame({f"lag{k}": series.shift(k) for k in range(lags)})
+    features = pd.DataFrame({f"lag{k}": series.shift(k) for k in range(lags)})
+    if include_exchange:
+        features["exchange_rate"] = weekly["exchange_rate"]
+    return features
+
+
+def normalize_weights(coef, intl_count):
+    """국제가격 계수만 합 1로 맞춘다. 환율 계수는 원/L per 원/USD 단위 그대로 유지."""
+    weights = np.asarray(coef, dtype=float).copy()
+    total = weights[:intl_count].sum()
+    if not np.isfinite(weights).all() or abs(total) < 1e-12:
+        raise ValueError("국제가격 계수 합이 0이거나 유효하지 않습니다.")
+    weights[:intl_count] /= total
+    return weights
+
+
+def select_lags(X, lags):
+    columns = [f"lag{k}" for k in range(lags)]
+    if "exchange_rate" in X.columns:
+        columns.append("exchange_rate")
+    return X[columns]
 
 
 
@@ -127,22 +149,27 @@ def training_data(weekly, fuel, lags=LAGS):
 
 
 # 7. 모형을 학습해 {"const": 상수, "weights": 시차별 계수}를 돌려줍니다. 예측식은 두 모형이 같습니다.
-# 예측 = const + weights · (같은 주, 1주 전, 2주 전 국제가)
+# 예측 = const + 국제가 비중 · 국제가 3개 시차 + 환율 계수 × 같은 주 환율
 # baseline: OLS의 상수와 계수를 그대로 씁니다.
-# recent_margin: 계수를 합이 1인 비중으로 나누고("국제가 1원 → 공급가 1원"), 상수는 최근 마진으로 다시 잡습니다.
+# recent_margin: 국제가 계수만 합 1로 맞추고 환율 계수는 유지, 상수는 마지막 52주 평균 잔차로 보정합니다.
 # 정유사 마진이 2015년 약 60원에서 최근 약 100원으로 커져, 11년 상수 하나로는 최근 가격을 낮게 예측합니다.
-def fit(X, y, model=CHOSEN, margin_weeks=MARGIN_WEEKS):
+def fit(X, y, model=CHOSEN, margin_weeks=MARGIN_WEEKS, feature_scale=None):
     A = np.column_stack([np.ones(len(X)), X.to_numpy()])
     coef = np.linalg.lstsq(A, y.to_numpy(), rcond=None)[0]
     if model == "baseline":
         return {"const": coef[0], "weights": coef[1:]}
-    weights = coef[1:] / coef[1:].sum()
+    intl_count = len(X.columns) - int("exchange_rate" in X.columns)
+    scale = np.ones(len(X.columns)) if feature_scale is None else np.asarray(feature_scale, dtype=float)
+    if scale.shape != (len(X.columns),) or not np.isfinite(scale).all() or (scale <= 0).any():
+        raise ValueError("표준화 척도는 설명변수마다 유한한 양수여야 합니다.")
+    # 계수 합 제약은 원/리터 단위에서 적용한 뒤 표준화 좌표로 되돌린다.
+    weights = normalize_weights(coef[1:] / scale, intl_count) * scale
     return {"const": recent_margin(X, y, weights, margin_weeks), "weights": weights}
 
 
 
 
-# 8. 최근 margin_weeks주 동안 "세전 공급가 − 국제가 가중평균"의 평균입니다. 정유사 마진에 해당합니다.
+# 8. 최근 margin_weeks주 동안 "세전 공급가 − 국제가 가중평균 − 환율 효과"의 평균으로 상수를 보정합니다.
 def recent_margin(X, y, weights, margin_weeks=MARGIN_WEEKS):
     recent_X, recent_y = X.to_numpy()[-margin_weeks:], y.to_numpy()[-margin_weeks:]
     return float(np.mean(recent_y - recent_X @ weights))
@@ -156,7 +183,7 @@ def predict(params, X):
 
 # 9. 기점 이동 표본 밖 검증입니다.
 # 기점 = 2018-01-01 이후 학습 행 위치 중 뒤에 32주가 남는 곳을 13주 간격으로 고른 것입니다.
-# 기점마다 그 이전 자료로만 학습하고, 다음 32주는 실제 국제가만 넣어 공급가를 맞힙니다. (정책 기간과 같은 조건)
+# 기점 이전 자료로 학습하고 다음 32주의 실제 국제가·환율로 공급가를 맞히는 조건부 예측입니다.
 # 반환: 오차(예측 − 실제) 행렬. 행 = 기점, 열 = 기점 뒤 몇 주째. bias < 0 이면 낮게 예측한 것입니다.
 def cutoffs(X):
     return [i for i in range(len(X))
@@ -197,7 +224,8 @@ def build_counterfactual(weekly):
             rows.append({"fuel": fuel, "model": model, "name": MODELS[model], "train_weeks": len(X),
                          "train_start": X.index[0].date(), "train_end": X.index[-1].date(),
                          "const": params["const"], **{f"w_lag{k}": params["weights"][k] for k in range(LAGS)},
-                         "w_sum": params["weights"].sum(), **score})
+                         "w_exchange_rate": params["weights"][LAGS],
+                         "w_sum": params["weights"][:LAGS].sum(), **score})
             pretax = pd.Series(predict(params, X_all), index=weekly.index)
             if model == "baseline":
                 out[f"{fuel}_baseline_aftertax"] = pretax * (1 + VAT) + tax

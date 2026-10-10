@@ -12,7 +12,7 @@ import numpy as np
 import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "full_sample"))
-from counterfactual import FUELS, HORIZON, VAT, fit, lagged_intl, load_weekly, predict, recent_margin
+from counterfactual import FUELS, HORIZON, LAGS, VAT, fit, lagged_intl, load_weekly, predict, recent_margin, normalize_weights, select_lags
 from counterfactual_check import (
     CHECK_WEEK, MARGIN_OPTIONS, MAX_LAGS, diff_data, diff_regression, lag_count_checks, unit_root_checks, wide_table,
 )
@@ -27,8 +27,8 @@ def test_lag_counts(weekly, fuel, train_end):
     X_train, y_train, X_test, y_test = split_data(weekly, fuel, train_end, lags=MAX_LAGS)
     scores = {}
     for lags in range(1, MAX_LAGS + 1):
-        params = fit(X_train.iloc[:, :lags], y_train)
-        scores[("③ 시차 수", f"평가 구간 MAE: 시차 {lags}개")] = np.abs(predict(params, X_test.iloc[:, :lags]) - y_test).mean()
+        params = fit(select_lags(X_train, lags), y_train)
+        scores[("③ 시차 수", f"평가 구간 MAE: 시차 {lags}개")] = np.abs(predict(params, select_lags(X_test, lags)) - y_test).mean()
     return scores
 
 
@@ -39,7 +39,7 @@ def test_lag_counts(weekly, fuel, train_end):
 def sensitivity(weekly, fuel, train_end):
     X_train, y_train, X_test, y_test = split_data(weekly, fuel, train_end)
     diff_coef = diff_regression(*diff_data(train_panel(weekly, train_end), fuel)).params.to_numpy()
-    sources = {"수준": fit(X_train, y_train)["weights"], "차분": diff_coef / diff_coef.sum()}
+    sources = {"수준": fit(X_train, y_train)["weights"], "차분": normalize_weights(diff_coef, LAGS)}
     policy = weekly[weekly["in_policy"]]
     X_policy = lagged_intl(weekly, fuel)[weekly["in_policy"]]
     first = np.arange(len(y_test)) < HORIZON

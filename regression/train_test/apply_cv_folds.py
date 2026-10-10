@@ -21,9 +21,9 @@ from counterfactual import CHOSEN, FUELS, MODELS, fit, lagged_intl, load_weekly,
 
 
 # 2. 입력·출력 위치와 모형 이름입니다. 결과 파일 이름에는 읽어 온 교차검증 폴더 이름을 붙입니다.
-DEFAULT_CV_DIR = PROJECT_DIR / "results" / "timesfm_cv_aligned"
-COMMON_TEST_PATH = PROJECT_DIR / "results" / "regression" / "train_test" / "common_test_models.csv"
-OUT_DIR = PROJECT_DIR / "results" / "regression" / "train_test"
+DEFAULT_CV_DIR = PROJECT_DIR / "results" / "timesfm_cv_normalized_exchange_rate"
+COMMON_TEST_PATH = PROJECT_DIR / "results" / "regression" / "train_test_exchange_rate" / "common_test_models.csv"
+OUT_DIR = PROJECT_DIR / "results" / "regression" / "train_test_exchange_rate"
 NAMES = {"recent_margin": "regression 최근 마진 (기점별 재적합)", "baseline": "regression 전체 회귀 (기점별 재적합)",
          "timesfm_cov": "TimesFM 3.0 (공변량)", "timesfm_uni": "TimesFM 3.0 (공변량 없음)", "no_change": "무변화 (기준주 가격 유지)"}
 ORDER = ["recent_margin", "baseline", "timesfm_cov", "timesfm_uni", "no_change"]
@@ -150,7 +150,7 @@ def save_report(folds, summary, leads, lead_rows, common, worst, cv_dir, horizon
     first = folds[folds["모형"] == "no_change"].drop_duplicates(["폴드"])
     lines = ["# 학습셋 교차검증과 공통 평가셋에서의 예측오차 비교", "",
              "## 1. 설계", "",
-             "- 자료·변수·분할: 딥러닝과 regression 모두 `regression/full_sample/counterfactual.py` 방식 (달력 연속 주별 표, 국제가 같은 주·1주 전·2주 전, 환율 없음, 정책 이전만).",
+             "- 자료·변수·분할: 국제가 같은 주·1주 전·2주 전과 같은 주 환율을 함께 사용하며 정책 이전만 평가합니다.",
              f"- 평면 A (학습셋 안 교차검증): `{cv_dir.relative_to(PROJECT_DIR).as_posix()}`의 기점 {first['폴드'].nunique()}개 × 예측 {horizon}주, 기점 간격 {step}주 "
              f"({first['기준주차'].iloc[0]} 기준 ~ {first['기준주차'].iloc[-1]} 기준). 기점마다 그 이전 자료만 사용.",
              f"- 회귀 재적합 점검: 예측 파일의 회귀 값을 counterfactual 경로로 다시 적합해 비교. 최대 차이 {worst:.4f}원 (허용 {TOLERANCE}원).",

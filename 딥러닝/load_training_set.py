@@ -3,11 +3,12 @@
 # "regression/train_test/split_regression.py")에 정의된 것을 그대로 가져와 사용합니다. 회귀 쪽에서 바꾸면 여기도 바뀝니다.
 #   - 자료: 클린파일을 달력상 연속한 주별 표로 만듭니다. 결측 행 제거로 빠진 주(2017-10-07)는 빈칸으로 두어,
 #           그 주가 시차에 걸리는 행은 자동으로 빠집니다(빠진 주를 건너뛰어 시차를 붙이면 "1주 전"이 2주 전이 되기 때문).
-#   - 설명변수: 해당 제품 국제가(원/리터)의 같은 주·1주 전·2주 전 3개. 국제가가 이미 원화이므로 환율은 쓰지 않습니다.
+#   - 설명변수: 해당 제품 국제가(원/리터)의 같은 주·1주 전·2주 전과 같은 주 원달러환율.
 #   - 학습 대상: 정책(최고가격제, 2026-03-13) 이전 주만. 정책 기간은 "policy" 구간으로 따로 받습니다.
 #   - 분할: 정책 이전 학습 행을 시간순으로 세어 앞 80%가 학습, 뒤 20%가 평가 (split_regression.py와 같은 경계).
 # 실행: python 딥러닝/load_training_set.py
 import csv
+import json
 import math
 import sys
 from pathlib import Path
@@ -56,7 +57,7 @@ BACKTEST_HORIZON = counterfactual.HORIZON
 
 def feature_names(product):
     intl = MODELS[product]["국제가격"]
-    return [f"{intl} (t)" if k == 0 else f"{intl} (t-{k})" for k in range(LAGS)]
+    return [f"{intl} (t)" if k == 0 else f"{intl} (t-{k})" for k in range(LAGS)] + [counterfactual.EXCHANGE_COLUMN + " (t)"]
 
 
 
@@ -82,7 +83,7 @@ def split_date(weekly):
 # 설계행렬은 counterfactual.lagged_intl(국제가 lag0·lag1·lag2), 타겟은 세전 공급가입니다.
 # 반환값은 딥러닝 모형에 바로 넣을 수 있는 numpy 배열과 주차·변수 이름을 담은 사전입니다.
 #   "y": 세전 공급가격 (표본수,)            → 예측 대상 시계열
-#   "X": 설명변수 행렬 (표본수, 3)         → 국제가 같은 주·1주 전·2주 전, 공변량으로 사용
+#   "X": 설명변수 행렬 (표본수, 4) → 국제가 3개 시차와 같은 주 환율, 공변량으로 사용
 #   "주차": 각 행의 주차 표기, "날짜": 주의 끝(토요일) 날짜
 # split: "train" 학습 80%, "test" 평가 20%, "all" 정책 이전 전체, "policy" 정책 기간(상한이 걸린 실제 공급가가 y)
 def load_training_set(product, weekly=None, split="train"):
@@ -137,9 +138,32 @@ def load_all_training_sets(split="train"):
 # 5. 비교용 회귀모형입니다. counterfactual.fit/predict를 numpy 배열로 감싼 것이라 회귀 쪽과 결과가 같습니다.
 #   baseline       OLS 상수·계수 그대로
 #   recent_margin  계수를 합 1로 정규화하고 상수는 학습 끝 52주 마진으로 다시 잡음 (regression 채택 모형)
-def fit_regression(X, y, model=REGRESSION_CHOSEN):
-    frame = pd.DataFrame(np.asarray(X, dtype=float), columns=[f"lag{k}" for k in range(LAGS)])
-    return counterfactual.fit(frame, pd.Series(np.asarray(y, dtype=float)), model)
+def fit_regression(X, y, model=REGRESSION_CHOSEN, feature_scale=None):
+    frame = pd.DataFrame(np.asarray(X, dtype=float), columns=[f"lag{k}" for k in range(LAGS)] + ["exchange_rate"])
+    return counterfactual.fit(frame, pd.Series(np.asarray(y, dtype=float)), model, feature_scale=feature_scale)
+
+
+def load_normalized_training_set(product, weekly=None, split="train", directory=None):
+    """새 정규화 CSV를 직접 읽고 열·날짜·정답·역변환 값을 원자료와 대조한다."""
+    directory = PROJECT_DIR / 'csv/normalized' if directory is None else Path(directory)
+    raw = load_training_set(product, weekly, split)
+    scaler = json.loads((directory / f'{product}_scaler.json').read_text(encoding='utf-8'))
+    if scaler['features'] != raw['설명변수'] or scaler.get('target_scaled') is not False:
+        raise ValueError('정규화 파일의 설명변수 또는 타겟 설정이 다릅니다.')
+    table = pd.read_csv(directory / f'{product}_{split}.csv', encoding='utf-8-sig')
+    if list(table.columns) != [KEY_COLUMN, '날짜', *raw['설명변수'], raw['타겟']]:
+        raise ValueError('정규화 CSV 열 또는 환율 입력 불일치')
+    if table['날짜'].tolist() != raw['날짜'] or table[KEY_COLUMN].tolist() != raw['주차']:
+        raise ValueError('정규화 CSV 평가 날짜 불일치')
+    values = table[raw['설명변수']].to_numpy(dtype=float)
+    scale, mean = np.asarray(scaler['scale']), np.asarray(scaler['mean'])
+    if scale.shape != (LAGS + 1,) or mean.shape != scale.shape or (scale <= 0).any() or not np.isfinite(values).all():
+        raise ValueError('정규화 척도 또는 입력값이 유효하지 않습니다.')
+    if not np.allclose(values * scale + mean, raw['X'], atol=1e-5, rtol=1e-7):
+        raise ValueError('정규화 파일과 현재 원자료 불일치')
+    if not np.allclose(table[raw['타겟']], raw['y'], atol=1e-5, rtol=0):
+        raise ValueError('정규화 파일과 실제 가격 불일치')
+    return {**raw, 'X': values, 'scaler': scaler}
 
 
 def predict_regression(params, X):
@@ -200,7 +224,7 @@ def main():
 
     first = next(iter(results.values()))
     print(f"자료: {INPUT_PATH.relative_to(PROJECT_DIR).as_posix()} → 달력 연속 주별 표 (regression/full_sample/counterfactual.py 방식)")
-    print(f"변수: 제품 국제가(원/L) 시차 {LAGS}개 (같은 주·1주 전·2주 전), 환율 없음. 정책({POLICY_START.date()}) 이전 주만 학습·평가")
+    print(f"변수: 제품 국제가(원/L) 시차 {LAGS}개와 같은 주 원달러환율. 정책({POLICY_START.date()}) 이전 주만 학습·평가")
     print(f"분할: 정책 이전 {counts['all']}주 중 앞 {TRAIN_SHARE:.0%} 학습 {counts['train']}주 (~{first['학습경계']}) / 평가 {counts['test']}주, 정책 기간 {counts['policy']}주 별도")
     print(f"학습 기간: {first['기간'][0]} ~ {first['기간'][1]}")
     print()

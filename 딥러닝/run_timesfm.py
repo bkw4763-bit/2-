@@ -2,7 +2,7 @@
 # 자료와 변수는 load_training_set.py(= regression의 주별 표·국제가 3개 시차·정책 이전 80/20 분할)에서 가져옵니다.
 #   - 사전학습 가중치를 고정하고 학습(파인튜닝) 없이 추론만 합니다.
 #   - 학습셋의 세전 공급가격 전체를 과거 문맥(context)으로 넣습니다.
-#   - 설명변수(국제가 같은 주·1주 전·2주 전)는 과거·미래 모두 알려진 공변량(past_future_covariates)으로 넣습니다.
+#   - 설명변수(국제가 3개 시차와 같은 주 환율)는 과거·미래 공변량(past_future_covariates)으로 넣습니다.
 #     회귀분석도 평가셋의 실제 국제가를 쓰므로 조건은 같습니다. 즉 국제가가 주어진 조건부 추정입니다.
 #   - 이 파일은 학습셋 → 평가셋 한 번만 예측합니다. 추론 설정을 고르는 학습셋 안 롤링 오리진 교차검증은
 #     cv_timesfm.py에 있습니다. 비교용 회귀(최근 마진·전체 회귀)는 같은 학습셋으로 적합해 함께 채점합니다.
@@ -16,7 +16,7 @@ import numpy as np
 from load_model import DEFAULT_CHECKPOINT, load_model
 from load_training_set import (
     INPUT_PATH, KEY_COLUMN, LAGS, MODELS, POLICY_START, PROJECT_DIR, REGRESSION_MODELS,
-    evaluate, fit_regression, load_training_set, load_weekly_table, predict_regression,
+    evaluate, fit_regression, load_normalized_training_set as load_training_set, load_weekly_table, predict_regression,
 )
 
 
@@ -24,8 +24,8 @@ from load_training_set import (
 
 # 2. 결과 저장 위치입니다.
 PREDICTION_DIR = PROJECT_DIR / "csv"
-REPORT_PATH = PROJECT_DIR / "results" / "timesfm_before_tax_report.md"
-MODEL_NAME = "timesfm3"
+REPORT_PATH = PROJECT_DIR / "results" / "timesfm_exchange_rate_report.md"
+MODEL_NAME = "timesfm3_exchange_rate"
 REGRESSION_LABELS = {"recent_margin": "회귀(최근 마진)", "baseline": "회귀(학습 구간 전체)"}
 
 
@@ -82,7 +82,7 @@ def run_single_model(product, model, weekly):
     no_change = [float(context[-1])] * horizon
     regression = {}
     for name in REGRESSION_MODELS:
-        params = fit_regression(train["X"], train["y"], name)
+        params = fit_regression(train["X"], train["y"], name, feature_scale=train['scaler']['scale'])
         regression[name] = {"예측": predict_regression(params, test["X"]), "계수": params}
     quantile_names = [f"q{round(level * 100):02d}" for level in levels]
     predictions = [
@@ -102,6 +102,7 @@ def run_single_model(product, model, weekly):
         "제품": product,
         "타겟": train["타겟"],
         "설명변수": train["설명변수"],
+        "표준화": train['scaler'],
         "문맥길이": len(context),
         "예측길이": horizon,
         "학습기간": train["기간"],
@@ -145,24 +146,25 @@ def save_report(results, checkpoint, path=REPORT_PATH):
         "",
         f"- 자료: `{INPUT_PATH.relative_to(PROJECT_DIR).as_posix()}` → regression 폴더와 같은 달력 연속 주별 표 (`regression/full_sample/counterfactual.py`)",
         "- 타겟변수: 정유사 주간공급가격 **세전** (제품별 3개 모형)",
-        f"- 설명변수: regression 폴더와 동일. 해당 제품 국제가(원/리터) 시차 {LAGS}개 (같은 주·1주 전·2주 전), 환율 없음. 과거·미래 공변량으로 입력",
+        f"- 설명변수: 국제가 시차 {LAGS}개와 같은 주 원달러환율. 실제 미래값을 포함한 공변량으로 입력하는 조건부 예측",
         f"- 학습·평가 대상: 정책({POLICY_START.date()}) 이전 주만. 정책 이전 학습 행의 앞 80%가 학습, 뒤 20%가 평가 (`regression/train_test/split_regression.py`와 같은 경계)",
         f"- 모형: TimesFM 3.0 사전학습 가중치 고정, 학습 없이 추론 (`{checkpoint}`)",
         f"- 문맥: 학습셋 {first['문맥길이']}주 ({first['학습기간'][0]} ~ {first['학습기간'][1]}, 경계 {first['학습경계']})",
         f"- 예측: 평가셋 {first['예측길이']}주 ({first['평가기간'][0]} ~ {first['평가기간'][1]}) 한 번에 예측. 기점을 옮기는 학습셋 안 교차검증은 `results/timesfm_cv/cv_report.md`",
         "- 비교 회귀: regression의 최근 마진 모형(비중 합 1, 상수 = 학습 끝 52주 마진)과 학습 구간 전체 회귀. 같은 학습셋으로 적합해 평가셋을 예측",
-        "- 평가셋의 실제 국제가를 모든 모형에 주므로 국제가가 주어진 조건부 추정입니다.",
+        "- 공변량 모형과 회귀에 실제 미래 국제가·환율을 제공한 조건부 추정입니다. 단변량·가격 유지 기준은 이 정보를 사용하지 않습니다.",
         "",
         "### 제품별 설명변수와 회귀 계수",
         "",
-        "| 모형 | 타겟 | 설명변수 | 최근 마진 비중 (같은 주 / 1주 전 / 2주 전) | 마진 |",
-        "| --- | --- | --- | --- | --- |",
+        "| 모형 | 타겟 | 설명변수 | 국제가 비중 (t / t-1 / t-2) | 환율 계수 | 보정 상수 |",
+        "| --- | --- | --- | --- | --- | --- |",
     ]
     for result in results:
         params = result["회귀계수"]["recent_margin"]
-        w = params["weights"]
+        w = params["weights"] / np.asarray(result['표준화']['scale'])
+        original_const = params['const'] - np.asarray(result['표준화']['mean']) @ w
         lines.append(f"| {result['제품']} | `{result['타겟']}` | " + ", ".join(f"`{n}`" for n in result["설명변수"])
-                     + f" | {w[0]:.2f} / {w[1]:.2f} / {w[2]:.2f} | {params['const']:.1f}원 |")
+                     + f" | {w[0]:.2f} / {w[1]:.2f} / {w[2]:.2f} | {w[LAGS]:.6f} | {original_const:.1f}원 |")
     lines += [
         "",
         "## 2. 평가셋 성능 비교",

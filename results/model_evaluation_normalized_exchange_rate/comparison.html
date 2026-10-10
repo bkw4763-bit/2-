@@ -1,0 +1,66 @@
+<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>환율을 포함한 회귀·TimesFM 재분석</title><style>body{font:16px/1.8 "Malgun Gothic",sans-serif;background:#f3f6fb;color:#24334a;margin:0}main{max-width:1100px;margin:30px auto;background:white;padding:32px;border-radius:12px}h2,h3{color:#1a4e79}.scroll{overflow:auto}table{border-collapse:collapse;width:100%;min-width:650px;font-size:14px}td,th{border:1px solid #dce4ef;padding:10px;text-align:left}th{background:#eaf1fa}code{overflow-wrap:anywhere}a{color:#176aa9}@media(max-width:700px){main{margin:0;padding:20px}}@media print{main{margin:0;padding:0}.scroll{overflow:visible}table{min-width:0;font-size:10px}}</style></head><body><main><h2>환율을 포함한 회귀·TimesFM 재분석</h2>
+<p>새 <code>csv/normalized</code> 파일을 읽어 국제가격 같은 주·1주 전·2주 전과 같은 주 원달러환율을 두 모형에 동일하게 제공했다. 기존과 같은 22개 기점 × 32주 × 3유종, 총 2,112개 예측으로 평가했다. 교차검증에서는 저장된 Z-score를 역변환하고 각 기점 이전 자료만으로 다시 표준화하여 미래 정보가 들어가지 않도록 했다.</p>
+<p>최근 마진 회귀는 국제가격 계수만 합 1로 정규화하고 환율 계수는 원래 단위로 유지한다. 마지막 52주 평균 잔차로 상수를 보정하므로, 상수는 환율 효과를 제외한 보정값이며 기존의 단순 가격 차이 마진과 같지 않다.</p>
+<p>TimesFM은 기존 소스 커밋과 같은 사전학습 모델을 사용했다. 실제 미래 국제가격·환율을 제공한 조건부 교차검증이며 미래 공변량까지 예측한 성능은 아니다. 가중치를 재학습하지 않고 입력 공변량에 환율을 추가했다.</p>
+<h3>기존 입력과 환율 포함·정규화 입력 비교</h3>
+<p>기존 대비 환율 추가와 입력 표준화를 함께 적용한 비교다. TimesFM의 순수한 환율 추가 효과만 분리한 실험은 아니다. 최근 마진 회귀는 원래 단위에서 계수 제약을 적용하여 표준화가 모형의 경제적 의미를 바꾸지 않도록 했다.</p>
+<p>감소율 = (기존 MAE − 환율 포함 MAE) / 기존 MAE × 100. 양수는 개선, 음수는 악화다.</p>
+<div class="scroll"><table><thead><tr><th scope="col">제품</th><th scope="col">모델</th><th scope="col">기존 MAE</th><th scope="col">환율 포함 MAE</th><th scope="col">MAE 감소율</th><th scope="col">기존 RMSE</th><th scope="col">환율 포함 RMSE</th></tr></thead><tbody>
+<tr><td>전체</td><td>최근 마진 회귀</td><td>19.4050</td><td>20.9402</td><td>-7.91%</td><td>25.7080</td><td>27.8641</td></tr>
+<tr><td>전체</td><td>TimesFM 딥러닝</td><td>20.6999</td><td>21.1912</td><td>-2.37%</td><td>28.1117</td><td>28.6227</td></tr>
+<tr><td>휘발유</td><td>최근 마진 회귀</td><td>18.0246</td><td>18.8303</td><td>-4.47%</td><td>23.2657</td><td>24.4375</td></tr>
+<tr><td>휘발유</td><td>TimesFM 딥러닝</td><td>18.9940</td><td>19.2983</td><td>-1.60%</td><td>25.0538</td><td>25.3181</td></tr>
+<tr><td>경유</td><td>최근 마진 회귀</td><td>16.9922</td><td>18.6545</td><td>-9.78%</td><td>21.6472</td><td>24.4819</td></tr>
+<tr><td>경유</td><td>TimesFM 딥러닝</td><td>18.7119</td><td>19.3944</td><td>-3.65%</td><td>24.0096</td><td>24.7955</td></tr>
+<tr><td>등유</td><td>최근 마진 회귀</td><td>23.1982</td><td>25.3359</td><td>-9.22%</td><td>31.1899</td><td>33.6552</td></tr>
+<tr><td>등유</td><td>TimesFM 딥러닝</td><td>24.3939</td><td>24.8809</td><td>-2.00%</td><td>34.1563</td><td>34.6693</td></tr>
+</tbody></table></div>
+<h3>환율 포함 두 모델 비교</h3>
+<div class="scroll"><table><thead><tr><th scope="col">제품</th><th scope="col">회귀 MAE</th><th scope="col">딥러닝 MAE</th><th scope="col">회귀의 MAE 감소율(딥러닝 대비)</th><th scope="col">회귀 RMSE</th><th scope="col">딥러닝 RMSE</th></tr></thead><tbody>
+<tr><td>전체</td><td>20.9402</td><td>21.1912</td><td>+1.18%</td><td>27.8641</td><td>28.6227</td></tr>
+<tr><td>휘발유</td><td>18.8303</td><td>19.2983</td><td>+2.42%</td><td>24.4375</td><td>25.3181</td></tr>
+<tr><td>경유</td><td>18.6545</td><td>19.3944</td><td>+3.82%</td><td>24.4819</td><td>24.7955</td></tr>
+<tr><td>등유</td><td>25.3359</td><td>24.8809</td><td>-1.83%</td><td>33.6552</td><td>34.6693</td></tr>
+</tbody></table></div>
+<p>전체 평균 MAE 기준 회귀의 오차가 딥러닝보다 1.18% 낮다. 등유에서는 딥러닝의 MAE가 더 작지만 회귀의 RMSE가 더 작으므로 지표별로 판단해야 한다.</p>
+<p>수치는 평균 오차 차이를 나타내며 정확도 백분율이나 통계적 유의성을 뜻하지 않는다. 기존 환율 미포함 p값은 새 모델에 적용하지 않는다. 새 검정값은 환율 포함 cv_summary.csv를 참고한다.</p>
+<h3>VIF</h3>
+<p>정책 이전 앞 80% 학습 자료에서 국제가격 3개 시차와 환율의 VIF를 다시 계산했다. VIF는 설명변수 간 선형 중복을 진단하며 변수의 필요성이나 인과효과를 직접 판정하지 않는다.</p>
+<div class="scroll"><table><thead><tr><th scope="col">유종</th><th scope="col">변수</th><th scope="col">VIF</th></tr></thead><tbody>
+<tr><td>휘발유</td><td>국제_석유제품가격(원)_휘발유(92RON) (t)</td><td>55.4039</td></tr>
+<tr><td>휘발유</td><td>국제_석유제품가격(원)_휘발유(92RON) (t-1)</td><td>132.7246</td></tr>
+<tr><td>휘발유</td><td>국제_석유제품가격(원)_휘발유(92RON) (t-2)</td><td>56.6613</td></tr>
+<tr><td>휘발유</td><td>원달러환율_주간평균_원/달러 환율 (t)</td><td>1.6374</td></tr>
+<tr><td>경유</td><td>국제_석유제품가격(원)_경유(0.001%) (t)</td><td>56.8640</td></tr>
+<tr><td>경유</td><td>국제_석유제품가격(원)_경유(0.001%) (t-1)</td><td>123.2038</td></tr>
+<tr><td>경유</td><td>국제_석유제품가격(원)_경유(0.001%) (t-2)</td><td>57.9125</td></tr>
+<tr><td>경유</td><td>원달러환율_주간평균_원/달러 환율 (t)</td><td>1.9745</td></tr>
+<tr><td>등유</td><td>국제_석유제품가격(원)_등유 (t)</td><td>59.8686</td></tr>
+<tr><td>등유</td><td>국제_석유제품가격(원)_등유 (t-1)</td><td>134.2623</td></tr>
+<tr><td>등유</td><td>국제_석유제품가격(원)_등유 (t-2)</td><td>60.8625</td></tr>
+<tr><td>등유</td><td>원달러환율_주간평균_원/달러 환율 (t)</td><td>1.8600</td></tr>
+</tbody></table></div>
+<p>환율의 VIF는 1.64~1.97로 낮다. 반면 인접 주 국제가격의 VIF가 높아, 공선성은 주로 국제가격 시차끼리의 중복에서 나타난다. 환율 제외를 높은 환율 VIF로 정당화할 수 없다.</p>
+<h3>결과 해석</h3>
+<p>최근 마진 회귀의 환율 추가 전후 전체 MAE 변화는 -7.91%의 감소율이다. 음수이면 환율 추가로 오차가 증가한 것이며, 환율을 추가한다고 예측력이 자동으로 개선되지는 않는다. 이는 이번 사양과 검증 구간의 결과이고 환율의 경제적 효과가 없다는 뜻은 아니다.</p>
+<h3>새 결과의 통계적 비교</h3>
+<div class="scroll"><table><thead><tr><th scope="col">유종</th><th scope="col">DM p값</th><th scope="col">비중첩 기점 부분집합 p값</th></tr></thead><tbody>
+<tr><td>휘발유</td><td>0.8022</td><td>0.7450</td></tr>
+<tr><td>경유</td><td>0.3293</td><td>0.7325</td></tr>
+<tr><td>등유</td><td>0.8571</td><td>0.9689</td></tr>
+</tbody></table></div>
+<p>세 유종 모두 겹침 보정 검정의 p값이 0.05보다 커 두 모델의 차이가 5% 수준에서 유의하게 확인되지 않았다. 이것은 성능이 같다는 증명이 아니다. 평가 창이 겹치고 기점이 22개이므로 평균 차이와 검정 결과를 함께 본다.</p>
+<h3>사용한 파일과 검증</h3>
+<p>기존 설치 모델: <code>C:\Users\ohobe\OneDrive\Desktop\경제 헤커톤\모델\timesfm-3.0-pytorch</code>. 새 다운로드를 중단하고 이 폴더의 기존 가중치를 읽었다.</p>
+<p>입력: <code>csv/normalized/{유종}_train.csv</code> 및 해당 scaler JSON. CSV의 환율 열·원자료 복원·실제값·날짜를 확인했다. 각 폴드의 평균·표준편차는 그 기점까지의 자료만으로 다시 계산했다.</p>
+<p>실행 중 공통 평가 표본·실제값과 기존 평가 격자의 일치를 확인했고, 별도 원자료 회귀 경로와 표준화 입력 회귀 경로의 프로토콜 검증도 통과했다.</p>
+<h3>근거 및 재실행</h3>
+<ul>
+<li><a href="metrics.csv">전체 성능 지표</a></li>
+<li><a href="before_after.csv">추가 전후 비교</a></li>
+<li><a href="vif.csv">VIF</a></li>
+<li><a href="../timesfm_cv_normalized_exchange_rate/cv_report.md">새 예측 및 프로토콜 보고서</a></li>
+<li><a href="../timesfm_cv_normalized_exchange_rate/cv_summary.csv">새 기점별 요약 및 유의성 검정</a></li>
+</ul>
+<p>실행: <code>.venv/Scripts/python regression/reanalyze_exchange_rate.py</code></p>
+<p>기존 비교는 저장된 기존 예측값을 사용했다. 동일 기점·예측일·실제값을 검증한 뒤 비교하며, 별도 테스트셋과 정책 기간을 섞지 않는다. 환경 차이까지 배제한 환율의 순수 효과 검증에는 같은 환경에서 환율 미포함 TimesFM도 다시 실행해야 한다.</p></main></body></html>

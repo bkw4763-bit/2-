@@ -1,0 +1,28 @@
+{
+  "features": [
+    "international_t",
+    "international_t-1",
+    "international_t-2",
+    "exchange_rate_t"
+  ],
+  "timesfm_complete": true,
+  "dependencies": {
+    "numpy": "2.5.2",
+    "pandas": "3.0.5",
+    "timesfm": "3.0.2",
+    "torch": "2.14.1",
+    "scipy": "1.17.1"
+  },
+  "input_sha256": "9f47c4f2280a14b082a6aca6236b820131b75e9c59220577c1d163d5591b772f",
+  "normalized_input_sha256": {
+    "경유_scaler.json": "dd515f72830484b36561812ed23f4d21a44c712f55613ec7e83d190ae21950fe",
+    "경유_train.csv": "3126902c041d34274389450c4dbd97b4d4192425d69fa93b12100dcb8c874ba7",
+    "등유_scaler.json": "1a5b8ef39563a2454f4a7404257486e29d9c630a9e1a4473c936667822e45bfa",
+    "등유_train.csv": "1488c55706fe22b736a00c1956a96e173f2112ae127680a457ed90726d06d2b9",
+    "휘발유_scaler.json": "0be07d90880d5ed4bbb02e9929eeb5f9c8637f0b475a95d9a79bd6b5a97bb151",
+    "휘발유_train.csv": "b6e01c613fa7eb03f271fd55c322c5ba61a2b4fee0a7f86fbd4d103a019b414f"
+  },
+  "checkpoint": "C:\\Users\\ohobe\\OneDrive\\Desktop\\경제 헤커톤\\모델\\timesfm-3.0-pytorch",
+  "model_config_sha256": "ff17bbc07b792c5a904cca265b8468579d736a4fe84981da25eb871b0a125bc6",
+  "model_revision_metadata": null
+}

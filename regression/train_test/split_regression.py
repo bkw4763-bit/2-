@@ -27,7 +27,7 @@ from counterfactual_check import AXIS, COLORS, INK, INK_2, MUTED, apply_plot_sty
 
 
 # 2. 분할 비율과 출력 위치입니다.
-OUT_DIR = PROJECT_DIR / "results" / "regression" / "train_test"
+OUT_DIR = PROJECT_DIR / "results" / "regression" / "train_test_exchange_rate"
 TRAIN_SHARE = 0.8
 FIG_START = pd.Timestamp("2023-07-01")      # 그림에서 평가 구간 앞에 학습 구간 끝 반년을 함께 보여 줍니다
 NAIVE = {"model": "naive", "name": "직전 가격 유지"}
@@ -100,6 +100,7 @@ def evaluate(weekly, fuel, train_end):
                      "train_start": X_train.index[0].date(), "train_end": X_train.index[-1].date(),
                      "test_weeks": len(X_test), "test_start": X_test.index[0].date(), "test_end": X_test.index[-1].date(),
                      "const": params["const"], **{f"w_lag{k}": params["weights"][k] for k in range(LAGS)},
+                     "w_exchange_rate": params["weights"][LAGS],
                      **{f"train_{key}": value for key, value in inner.items()}, **score,
                      "test_skill_vs_naive": 1 - score["test_MAE"] / naive["test_MAE"]})
     rows.append({"fuel": fuel, **NAIVE, "train_weeks": len(X_train), "test_weeks": len(X_test), **naive,

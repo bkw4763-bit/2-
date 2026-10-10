@@ -1,0 +1,14 @@
+{
+  "features": [
+    "international_t",
+    "international_t-1",
+    "international_t-2",
+    "exchange_rate_t"
+  ],
+  "timesfm_complete": false,
+  "dependencies": {
+    "numpy": "2.5.2",
+    "pandas": "3.0.5"
+  },
+  "input_sha256": "9f47c4f2280a14b082a6aca6236b820131b75e9c59220577c1d163d5591b772f"
+}

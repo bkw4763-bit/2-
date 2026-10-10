@@ -22,7 +22,7 @@ from counterfactual import (  # noqa: E402
 
 
 # 2. 출력 위치와 비교 대상 파일입니다.
-OUT_DIR = PROJECT_DIR / "results" / "regression" / "train_test"
+OUT_DIR = PROJECT_DIR / "results" / "regression" / "train_test_exchange_rate"
 PREDICTION_PATH = OUT_DIR / "common_test_predictions.csv"
 MODEL_PATH = OUT_DIR / "common_test_models.csv"
 REPORT_PATH = OUT_DIR / "common_test_report.md"
@@ -126,16 +126,16 @@ def save_report(scores, fits, train_info, test_labels, path=REPORT_PATH):
     lines = ["# regression 폴더 회귀모형을 공통 테스트셋에 적용한 결과", "",
              "## 1. 설계", "",
              "- 자료: `csv/merged_weekly_data_clean.csv`",
-             "- 모형: `regression/full_sample/counterfactual.py`의 최근 마진 모형(채택)과 전체 회귀. 국제가 같은 주·1주 전·2주 전 3개 시차, 환율은 쓰지 않음(국제가가 이미 원/리터)",
+             "- 모형: 최근 마진 및 전체 회귀. 국제가 3개 시차와 같은 주 환율을 사용하며 국제가 계수만 합 1로 정규화합니다.",
              f"- 분할: 딥러닝(`딥러닝/load_training_set.py`)과 같은 시간순 80/20, 정책 이전만. 학습 ~ {train_info[1].date()} ({train_info[2]}주), 테스트 {test_labels[0]} ~ {test_labels[-1]} ({len(test_labels)}주)",
              f"- 테스트셋은 정책 이전({POLICY_START.date()} 이전) 주만이며 `regression/train_test/split_report.md`의 평가 구간과 같습니다. 정책 기간은 평가에서 제외했습니다.",
              "- 모형은 학습 구간에서 한 번 고정하고 테스트 구간은 실제 국제가만 넣어 예측했습니다. 마진을 다시 잡지 않았습니다.",
              "- 비교 대상: `csv/timesfm3_predictions_*.csv`(TimesFM 3.0, regression 방식 자료·변수). `csv/regression_predictions_*.csv`(ols 111 OLS)는 테스트 주가 모두 있을 때만 포함. 모두 같은 주에서 채점했습니다.",
              "", "## 2. 학습 결과 (regression 최근 마진 모형)", "",
-             "| 유종 | 비중 (같은 주 / 1주 전 / 2주 전) | 마진 (학습 마지막 52주) |", "| --- | --- | --- |"]
+             "| 유종 | 국제가 비중 (t / t-1 / t-2) | 환율 계수 | 보정 상수 (학습 마지막 52주) |", "| --- | --- | --- | --- |"]
     for fuel, params in fits.items():
         w = params[CHOSEN]["weights"]
-        lines.append(f"| {ko[fuel]} | {w[0]:.2f} / {w[1]:.2f} / {w[2]:.2f} | {params[CHOSEN]['const']:.1f}원 |")
+        lines.append(f"| {ko[fuel]} | {w[0]:.2f} / {w[1]:.2f} / {w[2]:.2f} | {w[LAGS]:.6f} | {params[CHOSEN]['const']:.1f}원 |")
     frame = pd.DataFrame(scores)
     for segment in ["전체", "정책 이전", "정책 기간"]:
         part = frame[frame["segment"] == segment]
@@ -168,7 +168,7 @@ def main():
             table, fits[fuel], train_info = run_fuel(weekly, fuel, train_end, test_weeks)
             if attach_predictions(table, fuel, "ols111", f"regression_predictions_{spec['ko']}.csv"):
                 found.add("ols111")
-            if attach_predictions(table, fuel, "timesfm3", f"timesfm3_predictions_{spec['ko']}.csv"):
+            if attach_predictions(table, fuel, "timesfm3", f"timesfm3_exchange_rate_predictions_{spec['ko']}.csv"):
                 found.add("timesfm3")
             tables.append(table)
             scores += score_table(table, [CHOSEN, "baseline", *sorted(found & {"ols111", "timesfm3"}), "naive"])

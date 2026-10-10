@@ -23,6 +23,7 @@ from statsmodels.tsa.stattools import adfuller, coint
 from counterfactual import (
     FUELS, HORIZON, LAGS, OUT_DIR, VAT,
     backtest, build_counterfactual, cutoffs, fit, lagged_intl, load_weekly, predict, recent_margin, training_data,
+    normalize_weights, select_lags,
 )
 
 
@@ -95,7 +96,9 @@ def unit_root_checks(weekly, fuel):
     coef, ssr = np.linalg.lstsq(A, y.to_numpy(), rcond=None)[:2]
     dX, dy = diff_data(weekly, fuel)
     result = diff_regression(dX, dy)
-    total = result.t_test((np.ones(LAGS), 1.0))
+    constraint = np.zeros(len(result.params))
+    constraint[:LAGS] = 1
+    total = result.t_test((constraint, 1.0))
     return {
         ("① 정상성", "ADF p: 공급가 수준"): adf_p(supply.dropna()),
         ("① 정상성", "ADF p: 공급가 차분"): adf_p(supply.diff().dropna()),
@@ -105,7 +108,8 @@ def unit_root_checks(weekly, fuel):
         ("① 자기상관", "수준 회귀 Durbin-Watson"): durbin_watson(y.to_numpy() - A @ coef),
         ("① 자기상관", "수준 회귀 R² (근거로 쓰지 않음)"): 1 - ssr[0] / ((y - y.mean()) ** 2).sum(),
         **{("② 차분 회귀", f"계수 lag{k}"): result.params.iloc[k] for k in range(LAGS)},
-        ("② 차분 회귀", "계수 합"): result.params.sum(),
+        ("② 차분 회귀", "계수 합"): result.params.iloc[:LAGS].sum(),
+        ("② 차분 회귀", "환율 계수"): result.params.iloc[LAGS],
         ("② 차분 회귀", "계수 합 표준오차 (Newey-West)"): float(np.ravel(total.sd)[0]),
         ("② 차분 회귀", "'계수 합 = 1' p"): float(total.pvalue),
         ("② 차분 회귀", "R² (평균 제거)"): centered_r2(result, dy),
@@ -118,7 +122,7 @@ def unit_root_checks(weekly, fuel):
 # 6. ③ 시차 수: 시차 1~5개 모형을 같은 학습 행(시차 5개가 모두 있는 주)으로 검증해 MAE를 비교합니다.
 def lag_count_checks(weekly, fuel):
     X, y = training_data(weekly, fuel, lags=MAX_LAGS)
-    return {("③ 시차 수", f"기점 이동 MAE: 시차 {lags}개"): np.abs(backtest(X.iloc[:, :lags], y, fit)).mean()
+    return {("③ 시차 수", f"기점 이동 MAE: 시차 {lags}개"): np.abs(backtest(select_lags(X, lags), y, fit)).mean()
             for lags in range(1, MAX_LAGS + 1)}
 
 
@@ -151,7 +155,7 @@ def sensitivity(weekly, fuel):
     policy = weekly[weekly["in_policy"]]
     dX, dy = diff_data(weekly, fuel)
     diff_coef = diff_regression(dX, dy).params.to_numpy()
-    sources = {"수준": fit(X, y)["weights"], "차분": diff_coef / diff_coef.sum()}
+    sources = {"수준": fit(X, y)["weights"], "차분": normalize_weights(diff_coef, LAGS)}
     gaps = {}
     for source, weights in sources.items():
         for margin_weeks in MARGIN_OPTIONS:

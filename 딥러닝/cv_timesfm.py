@@ -21,7 +21,7 @@ from load_model import DEFAULT_CHECKPOINT, load_model
 from load_training_set import (
     BACKTEST_HORIZON, BACKTEST_START, BACKTEST_STEP, INPUT_PATH, KEY_COLUMN, LAGS, MODELS,
     POLICY_START, PROJECT_DIR, REGRESSION_MODELS, counterfactual, evaluate, fit_regression,
-    load_training_set, load_weekly_table, predict_regression, split_date,
+    load_normalized_training_set as load_training_set, load_weekly_table, predict_regression, split_date,
 )
 from run_timesfm import forecast
 
@@ -36,11 +36,11 @@ from run_timesfm import forecast
 PROTOCOLS = {
     "regression": {
         "horizon": BACKTEST_HORIZON, "step": BACKTEST_STEP, "start": BACKTEST_START.date().isoformat(),
-        "min_context_ratio": None, "dir": "timesfm_cv_aligned",
+        "min_context_ratio": None, "dir": "timesfm_cv_normalized_exchange_rate",
         "설명": "regression 폴더 기점 이동 백테스트와 동일 격자 (창 겹침, Diebold-Mariano 검정)",
     },
     "nonoverlap": {
-        "horizon": 26, "step": 26, "start": None, "min_context_ratio": 0.5, "dir": "timesfm_cv",
+        "horizon": 26, "step": 26, "start": None, "min_context_ratio": 0.5, "dir": "timesfm_cv_exchange_rate",
         "설명": "비중첩 롤링 오리진 (GIFT-Eval·fev-bench 방식, 창 독립)",
     },
 }
@@ -108,6 +108,7 @@ def fold_inputs(train, origin, horizon):
 
 # 5. 창 하나에 다섯 모형을 적용해 예측값을 모형별 사전으로 돌려줍니다.
 def predict_fold(model, train, origin, horizon):
+    train = prepare_normalized_fold(train, origin)
     context, covariates, actual = fold_inputs(train, origin, horizon)
     predicted_cov, _, _ = forecast(model, context, covariates, horizon)
     outputs = list(model.predict_batch(
@@ -121,10 +122,23 @@ def predict_fold(model, train, origin, horizon):
         "timesfm_uni": [float(v) for v in predicted_uni],
     }
     for name in REGRESSION_MODELS:
-        params = fit_regression(train["X"][:origin], train["y"][:origin], name)
+        params = fit_regression(train["X"][:origin], train["y"][:origin], name,
+                                feature_scale=train['scaler']['scale'])
         predictions[name] = predict_regression(params, train["X"][origin : origin + horizon])
     predictions["no_change"] = [float(context[-1])] * horizon
     return actual, {name: predictions[name] for name in MODEL_LABELS}
+
+
+def prepare_normalized_fold(train, origin):
+    """CSV를 역변환한 뒤 각 폴드의 과거 자료만으로 다시 표준화한다."""
+    scaler = train['scaler']
+    raw = np.asarray(train['X']) * np.asarray(scaler['scale']) + np.asarray(scaler['mean'])
+    past = raw[:origin]
+    mean, std = past.mean(axis=0), past.std(axis=0)
+    scale = np.where(std == 0, 1.0, std)
+    return {**train, 'X': (raw - mean) / scale,
+            'scaler': {**scaler, 'mean': mean.tolist(), 'scale': scale.tolist(),
+                       'train_rows': origin, 'train_end': train['날짜'][origin - 1]}}
 
 
 
@@ -326,11 +340,12 @@ def save_report(results, metrics, summary, leads, lead_table, checks, protocol, 
         "## 1. 검증 설계",
         "",
         f"- 프로토콜: `--protocol {name}`. 예측 길이 {horizon}주, 기점 간격 {step}주, 기점 {len(first['기준점'])}개.",
-        f"- 자료·변수·분할: regression 폴더와 동일 (`regression/full_sample/counterfactual.py`). 해당 제품 국제가 시차 {LAGS}개(같은 주·1주 전·2주 전), 환율 없음.",
+        f"- 자료·변수·분할: regression 폴더와 동일. 국제가 시차 {LAGS}개와 같은 주 원달러환율을 함께 사용. 실제 미래 국제가·환율이 주어진 조건부 예측.",
         f"- 구간: 학습셋만 사용 ({first['학습기간'][0]} ~ {first['학습기간'][1]}, {first['학습길이']}주). 평가셋과 정책 기간({POLICY_START.date()} 이후)은 쓰지 않음.",
         f"- 첫 기점 문맥 {first['기준점'][0]}주, 마지막 기점 문맥 {first['기준점'][-1]}주.",
         f"- TimesFM: 사전학습 가중치 고정, 기점마다 문맥만 확장 (`{checkpoint}`). 회귀 두 모형: 기점마다 비중과 마진을 다시 적합.",
-        "- 예측 구간의 **실제** 국제가를 모든 모형에 같이 넣습니다. 즉 국제가가 주어진 조건부 예측이고, 모형 간 입력 정보는 같습니다.",
+        "- 새 `csv/normalized` 파일을 직접 사용합니다. 교차검증에서는 CSV를 역변환한 후 각 기점 이전 자료만으로 Z-score를 다시 계산하며, 회귀의 국제가 계수 합 제약은 원래 단위에서 적용합니다.",
+        "- 회귀와 TimesFM 공변량에 실제 미래 국제가·환율을 함께 제공합니다. TimesFM 단변량과 가격 유지 모형은 공변량을 사용하지 않습니다.",
         f"- 창 겹침: 간격 {step}주 < 예측 {horizon}주 → 한 주가 최대 {lag + 1}개 창에 등장." if lag else "- 창이 겹치지 않으므로 기점별 지표를 독립 표본으로 봅니다.",
         "",
     ]

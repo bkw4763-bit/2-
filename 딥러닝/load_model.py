@@ -13,6 +13,9 @@ DEFAULT_CHECKPOINT = (
     / "모델"
     / "timesfm-3.0-pytorch"
 )
+EXISTING_CHECKPOINT = Path(__file__).resolve().parents[1].parent / '경제 헤커톤/모델/timesfm-3.0-pytorch'
+if (EXISTING_CHECKPOINT / 'model.safetensors').is_file():
+    DEFAULT_CHECKPOINT = EXISTING_CHECKPOINT
 
 
 def load_model(checkpoint_path=DEFAULT_CHECKPOINT, *, device="cpu", threads=4):
