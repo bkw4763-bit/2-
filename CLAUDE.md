@@ -45,7 +45,7 @@
 | `policy/optimize.py` | 4단계 11차 권고(216개 첫 행동 × 500 경로) → `results/policy/optimize_*.csv` |
 | `docs/model_design.md` | 2~4단계 모형 설정과 실행 방법 |
 
-실행 순서: `python regression/full_sample/counterfactual.py` → `python policy/fiscal.py` → `python policy/cpi.py` → `python policy/optimize.py --volume … --weights … --cpi-limit …`
+실행 순서: `python regression/full_sample/counterfactual.py` → `python policy/fiscal.py` → `python policy/cpi.py` → `python policy/optimize.py --sensitivity --replay`
 
 ## 자료에서 확인한 사실 (2026-10-09 기준)
 
@@ -80,7 +80,7 @@
 1. **유종별 "없었다면" 가격** (`counterfactual.py`, **완료**): 상한제 이전 주별 자료로 `{fuel}_supply_pretax` 를 `{fuel}_intl_krw_l` 의 같은 주·1주 전·2주 전 값에 회귀한다. 계수는 합이 1이 되도록 나눠 시차 비중으로만 쓰고, 상수(마진)는 상한제 직전 52주 평균으로 다시 잡는다('최근 마진' 모형). 처음 합의한 11년 전체 회귀는 비교용으로 남겼다. `× 1.1 + {fuel}_tax` 로 세후로 바꾸고, 기점 이동 검증 오차의 5~95% 분위로 90% 구간을 붙인다. 공급가 미공개 주는 `provisional`. 결과는 `counterfactual.csv`, `counterfactual_models.csv`. 근거 점검은 `counterfactual_checks.csv`, `counterfactual_sensitivity.csv`, 그림은 `counterfactual.png`(위 = 가격 수준, 아래 = 유종별 격차). 머신러닝 비교는 넣지 않기로 했다(결과에 필요 없고, 학습 범위 밖 가격을 예측하지 못함).
 2. **격차와 재정 부담** (`policy/fiscal.py`, **완료**): 격차 = "없었다면" 세후 공급가 − 상한. 하루 재정 부담 = 격차 × `config.DAILY_VOLUME_L`.
 3. **물가 영향** (`policy/cpi.py`, **완료**): 소매가 상승 = 상한 인상폭 × 반영률(위 표에서 추정). 물가 기여도 = `config.CPI_WEIGHTS` × 소매가 상승률.
-4. **차수 결정 최적화** (`policy/optimize.py`, **완료**, 판매량·가중치·한도 입력 필요): 상태 = 유종별 격차·유가·환율. 행동 = 유종별 조정 폭(−60, 0, +30, +60, +90, +120원). 제약 = 월 물가 기여도 한도와 차수당 최대 인상폭. 목표 = 6개 차수 누적 재정 부담 최소화. 유가 경로를 수백 개 무작위로 만들어 평균 비용이 가장 낮은 첫 행동을 고른다.
+4. **차수 결정 최적화** (`policy/optimize.py`, **완료**): 상태 = 유종별 격차·유가·환율. 행동 = 유종별 조정 폭(−60, 0, +30, +60, +90, +120원). 제약 = 월 물가 기여도 한도와 차수당 최대 인상폭. 목표 = 6개 차수 누적 재정 부담 최소화. 유가 경로를 수백 개 무작위로 만들어 평균 비용이 가장 낮은 첫 행동을 고른다.
 5. **권고문**: 이번 범위에서 제외.
 
 **검증**
@@ -97,6 +97,6 @@
 
 ## 아직 확인하지 못한 것
 
-- **`CPI_LIMIT_PP`**: 월 물가 기여도 한도. 팀 결정 전이라 임시 0.1%p 로 실행했다. 판매량 파일 단위(천 배럴로 처리)도 확인 필요.
+- 월 물가 기여도 한도는 자료에서 계산한다(9월 상한제 물가 억제 0.630%p ÷ 6차수 = 0.105%p). 판매량 파일 단위는 천 배럴(확인).
 - **3·4·5·9차 시행일**: `csv/caps.csv` 에서 '추정'으로 표시된 값이다.
 - **사전 작성 코드 허용 여부**: 주최 측 답을 받지 못했다.

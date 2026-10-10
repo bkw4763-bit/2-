@@ -5,7 +5,7 @@
 #   - "없었다면" 가격: 1단계 식 그대로 (m + w·국제가 시차) × 1.1 + 유류세
 #   - 12~16차: 단순 규칙(격차가 큰 유종부터, 물가 한도 안에서 격차까지 인상)
 #   - 모든 행동이 같은 경로를 씁니다(공통 난수). 행동 간 차이가 경로 운이 아니라 행동 때문이 되도록.
-# 실행: python policy/optimize.py --volume 휘발유,경유,등유 --weights 휘발유,경유,등유 --cpi-limit 0.1 [--sensitivity]
+# 실행: python policy/optimize.py [--cpi-limit 값] [--sensitivity] [--replay]   (한도를 안 주면 자료에서 정함, 9번 함수)
 import argparse
 import itertools
 from pathlib import Path
@@ -152,6 +152,20 @@ def replay(volume, weights, limit, n_paths=200):
     return pd.DataFrame(rows)
 
 
+# 9. 월 물가 기여도 한도를 자료에서 정합니다.
+# 한도 = 최근 달에 상한제가 눌러 두고 있는 물가(%p) ÷ 남은 차수(6).
+# 뜻: 상한제로 눌러 둔 물가 효과를 24주(6차수) 동안 같은 크기로 나눠 되돌리면, 한 번에 물가가 튀지 않고
+#     기간 끝에는 상한 없는 가격에 닿을 수 있습니다. 3단계 검증(3~8월 0.57%p, 정부 0.6%p)을 통과한 값에서 나옵니다.
+# 점검용으로 실제 2차(+210원) 인상의 물가 기여도도 돌려줍니다. 정부가 한 번 받아들인 최대 인상입니다.
+def derive_cpi_limit(weights, retail):
+    from cpi import policy_effect, retail_weekly
+    effect = policy_effect(C.load_cf(), retail_weekly(), weights)
+    month = effect.index[-1]
+    pt = monthly_pass_through()
+    second = sum(weights[f] / 1000 * 210 * pt[f] / retail[f] * 100 for f in C.FUELS)
+    return effect["cpi_cut_pp"].iloc[-1] / C.ROUNDS, effect["cpi_cut_pp"].iloc[-1], str(month), second
+
+
 def best(table):
     row = table.iloc[0]
     return tuple(int(row[C.KO[f]]) for f in C.FUELS)
@@ -168,14 +182,16 @@ def main():
     args = ap.parse_args()
     volume = C.parse_triplet(args.volume, C.DAILY_VOLUME_L)
     weights = C.parse_triplet(args.weights, C.CPI_WEIGHTS)
-    missing = [n for n, v in [("물가 가중치(--weights)", weights),
-                              ("월 물가 기여도 한도(--cpi-limit)", args.cpi_limit)] if v is None]
-    if missing:
-        raise SystemExit("미확인 값이 있어 최적화를 멈춥니다: " + ", ".join(missing))
+    if weights is None:
+        raise SystemExit("물가 가중치(--weights)가 없어 최적화를 멈춥니다.")
 
     intl = C.load_intl()
     params = C.load_params()
     retail, retail_week = C.latest_retail()
+    if args.cpi_limit is None:
+        args.cpi_limit, held, month, second = derive_cpi_limit(weights, retail)
+        print(f"[월 물가 한도] {month} 상한제가 눌러 둔 물가 {held:.3f}%p ÷ {C.ROUNDS}차수 = {args.cpi_limit:.3f}%p"
+              f" (참고: 실제 2차 +210원 인상 = {second:.3f}%p)")
     weeks = C.ROUNDS * C.ROUND_WEEKS
     cf, now = counterfactual_paths(intl, simulate_intl(intl, weeks), params)
     ctx = context(volume, weights, args.cpi_limit, retail, last_week=intl.index[-1])
@@ -194,7 +210,7 @@ def main():
         print(f"  {C.KO[f]}: 상한 {C.CURRENT_CAP[f]:.0f}, \"없었다면\" {now[i]:.1f}, 격차 {now[i] - C.CURRENT_CAP[f]:.1f}원/리터")
     r = table.iloc[0]
     print(f"\n11차 권고: " + ", ".join(f"{C.KO[f]} {rec[i]:+d}원" for i, f in enumerate(C.FUELS))
-          + f" / 이번 달 물가 {r['물가 기여도(%p)']:+.3f}%p (한도 {args.cpi_limit}%p)"
+          + f" / 이번 달 물가 {r['물가 기여도(%p)']:+.3f}%p (한도 {args.cpi_limit:.3f}%p)"
           + f" / 4주 재정 절감 {r['4주 절감(억 원)']:,.0f}억 원 (동결 대비, 경로 평균)")
     print("\n[상위 10개 첫 행동]")
     print(table.head(10).round(3).to_string())

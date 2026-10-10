@@ -35,9 +35,9 @@ RESPONSE = {
 DAILY_VOLUME_L = None   # 고정값을 쓰려면 {"gasoline": 리터/일, ...}. None 이면 월별 판매량 파일(daily_volume)을 씁니다
 # 소비자물가 품목 가중치(2020년 기준, 1000 기준). csv/cpi_weights_2020.xlsx 표1: 휘발유 24.1, 경유 16.3, 등유 2.4
 CPI_WEIGHTS = {"gasoline": 24.1, "diesel": 16.3, "kerosene": 2.4}
-CPI_LIMIT_PP = None     # 월 물가 기여도 한도(%p). 팀 결정
+CPI_LIMIT_PP = None     # 월 물가 기여도 한도(%p). None 이면 optimize.derive_cpi_limit 가 자료에서 정함
 
-SALES_PATH = PROJECT_DIR / "csv" / "petroleum_sales_monthly_202608.csv"   # 월별 판매량(천 배럴로 판단, 파일에 단위 표기 없음)
+SALES_PATH = PROJECT_DIR / "csv" / "petroleum_sales_monthly_202608.csv"   # 월별 판매량(단위 천 배럴, 팀 확인)
 CAPS_PATH = PROJECT_DIR / "csv" / "caps.csv"                              # 1~10차 시행일과 상한
 BBL_L = 158.987                                                            # 1배럴 = 158.987리터
 
