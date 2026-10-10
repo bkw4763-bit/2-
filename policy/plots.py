@@ -9,6 +9,7 @@ import matplotlib
 
 matplotlib.use("Agg")
 logging.getLogger("matplotlib.font_manager").setLevel(logging.ERROR)   # 없는 글꼴을 건너뛸 때 나오는 경고 숨김
+import matplotlib.dates
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
@@ -225,13 +226,39 @@ def plot_summary():
     plt.close(fig)
 
 
+# 6. 상한제 기간 주별 정부 지원금액(격차)과 상한 조정 시점. 1·2단계 설명용.
+def plot_gap():
+    cf = C.load_cf()
+    pol = cf[cf["in_policy"]]
+    caps = C.load_caps()
+    fig, ax = plt.subplots(figsize=(11, 4.2))
+    for f in C.FUELS:
+        ax.plot(pol.index, pol[f"{f}_gap"], color=COLORS[f], marker=MARKERS[f], markersize=4, label=C.KO[f])
+        ax.annotate(f"{C.KO[f]} {pol[f'{f}_gap'].iloc[-1]:.0f}원", (pol.index[-1], pol[f"{f}_gap"].iloc[-1]),
+                    xytext=(6, {"gasoline": -6, "diesel": 4, "kerosene": 0}[f]), textcoords="offset points", va="center", color=INK, fontsize=9)
+    ax.axhline(0, color=AXIS, linewidth=1)
+    for r in (2, 7):
+        day, change = caps.loc[r, "start"], caps.loc[r, "gasoline"] - caps.loc[r - 1, "gasoline"]
+        ax.axvline(day, color=INK_2, linestyle="--", linewidth=1)
+        ax.annotate(f"{r}차 상한 {change:+.0f}원", (day, ax.get_ylim()[1]), xytext=(4, -4), textcoords="offset points", va="top", color=INK_2, fontsize=8)
+    ax.set_xlim(pol.index[0] - pd.Timedelta(days=3), pol.index[-1] + pd.Timedelta(days=24))
+    ax.xaxis.set_major_formatter(matplotlib.dates.DateFormatter("%m/%d"))
+    ax.set_ylabel("리터당 원")
+    ax.set_title("상한제 기간 주별 정부 지원금액 (상한제가 없었다면 가격 − 실제 공급가)")
+    ax.legend(loc="upper right", fontsize=8, ncol=3)
+    fig.tight_layout()
+    fig.savefig(OUT / "gap.png", dpi=160)
+    plt.close(fig)
+
+
 def main():
     apply_style()
+    plot_gap()
     plot_summary()
     plot_cpi()
     plot_optimize()
     plot_checks()
-    print(f"저장: {OUT / 'summary.png'} (발표용 요약), {OUT / 'cpi.png'}, {OUT / 'optimize.png'}, {OUT / 'checks.png'}")
+    print(f"저장: {OUT / 'summary.png'} (발표용 요약), {OUT / 'gap.png'}, {OUT / 'cpi.png'}, {OUT / 'optimize.png'}, {OUT / 'checks.png'}")
 
 
 if __name__ == "__main__":

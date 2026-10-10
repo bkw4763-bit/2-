@@ -29,4 +29,4 @@ python policy/optimize.py --sensitivity --replay
 python policy/plots.py
 ```
 
-결과는 `results/policy/` 에 저장됩니다. 자세한 설정과 근거는 `docs/model_design.md`, 프로젝트 규칙은 `CLAUDE.md` 를 보세요.
+결과는 `results/policy/` 에 저장됩니다. 발표 자료는 `docs/presentation.html` (브라우저로 열기), 자세한 설정과 근거는 `docs/model_design.md`, 프로젝트 규칙은 `CLAUDE.md` 를 보세요.
