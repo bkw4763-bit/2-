@@ -55,4 +55,4 @@
 
 사용 모델: `C:\Users\ohobe\OneDrive\Desktop\경제 헤커톤\모델\timesfm-3.0-pytorch`
 
-재실행: `.venv/Scripts/python regression/plot_policy_counterfactual.py`
+재실행(PowerShell): `& "../경제 헤커톤/.venv-timesfm/Scripts/python.exe" regression/plot_policy_counterfactual.py`

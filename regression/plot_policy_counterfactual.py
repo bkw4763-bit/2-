@@ -2,10 +2,13 @@
 import base64
 import csv
 import json
+import os
 import sys
 from html import escape
 from pathlib import Path
 
+ROOT = Path(__file__).resolve().parents[1]
+os.environ.setdefault('MPLCONFIGDIR', str(ROOT / 'data/.matplotlib'))
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.dates as mdates
@@ -13,7 +16,6 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
-ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / '딥러닝'))
 from load_model import DEFAULT_CHECKPOINT, load_model
 from load_training_set import load_normalized_training_set, load_weekly_table, fit_regression, predict_regression
@@ -118,7 +120,7 @@ def save_documents(summaries, files, inputs):
     for name, product, path in files:
         lines += [f'### {LABELS[name]} · {product}', '', f'![{LABELS[name]} {product}]({path.name})', '']
     lines += ['[주별 예측 및 실제 가격](predictions.csv)', '', f'사용 모델: `{DEFAULT_CHECKPOINT}`', '',
-              '재실행: `.venv/Scripts/python regression/plot_policy_counterfactual.py`']
+              f'재실행(PowerShell): `& "{sys.executable}" regression/plot_policy_counterfactual.py`']
     (OUT / 'report.md').write_text('\n'.join(lines) + '\n', encoding='utf-8')
     sections = []
     for name, product, path in files:
