@@ -1,3 +1,0 @@
--r requirements.txt
-psutil>=6.0
-timesfm[torch] @ https://github.com/google-research/timesfm/archive/e51928e27119cb17bebc005be2696b75e0a9e688.zip
