@@ -23,49 +23,29 @@
 - 팀원이 말로 설명할 수 있는 단순한 방법을 먼저 쓴다. (회귀가 기본, 다른 모형은 비교용)
 - API 키는 `.env` 에만 둔다. 코드와 커밋에 넣지 않는다.
 - 숫자를 지어내지 않는다. 확인하지 못한 값은 `None` 으로 두거나 '미확인'이라고 적는다.
-- 외부 호출은 `collect.with_cache` 를 거친다. (실패하면 저장본으로 대체)
 - 아래 '남은 구현'에 적힌 범위만 만든다. '제외' 항목은 요청이 있을 때만 추가한다.
-- 코드를 고친 뒤에는 `python test_parsers.py` 가 통과하는지 확인한다.
+- 코드를 고친 뒤에는 `policy/` 세 스크립트가 끝까지 도는지 확인한다.
 
-## 현재 구현: 수집과 전처리
+## 현재 구현 (이 저장소 기준)
 
 | 파일 | 역할 |
 |---|---|
-| `config.py` | 키 이름, 통계 코드, 유종 정의, 파일 이름, 단위 상수 |
-| `collect.py` | `input/` 파일 읽기와 ECOS·KOSIS·오피넷·FRED 호출. 결과를 `data/raw` 에 저장 |
-| `prepare.py` | 일별·주별·월별·차수별·최신값 표를 만들어 `data/processed` 에 저장 |
-| `run_pipeline.py` | 수집 → 전처리 → "없었다면" 가격 실행. `--offline` 이면 저장본만 사용 |
-| `counterfactual.py` | 1단계 "없었다면" 공급가. 단독 실행하면 모형 비교표와 주별 격차를 출력 |
-| `counterfactual_check.py` | 1단계 근거 점검(정상성·공적분, 차분 회귀, 시차·변수 선택, 구간 적중률, 민감도)과 그림. 파이프라인과 별도로 실행 |
-| `docs/regression_method.md` | 1단계 회귀분석 방법론 정리 (다른 저장소에 옮길 때 참고) |
-| `docs/model_design.md` | 2~5단계 모형 설정, 단계별 준비 자료와 결정 사항 |
-| `test_parsers.py` | 키·인터넷 없이 도는 점검 |
-| `caps.csv` | 1~10차 최고가격 (직접 입력) |
-| `input/*.csv` | 오피넷에서 내려받은 과거 자료 4종 (cp949) |
+| `fetch_exchange_rates.py` | 환율 수집 |
+| `preprocessing/*.py` | 주간 자료 병합(`merge_weekly_csv.py`), 결측 점검·제거, 주간 환율 전처리 |
+| `csv/merged_weekly_data_clean.csv` | 1단계 입력. 주차별 국제가(원/리터)·정유사 세전/세후 공급가·주유소 판매가 |
+| `csv/international_petroleum_prices_*_krw.csv` | 국제가(원/리터) 주간. 공급가보다 최근 주(10월 1주)까지 있어 4단계 상태로 씀 (cp949) |
+| `csv/gas_station_weekly_prices.csv` | 주유소 주간 판매가 (cp949). 3·4단계 물가 분모 |
+| `regression/full_sample/counterfactual.py` | 1단계 "없었다면" 공급가(최근 마진 모형). 결과 `results/regression/full_sample/counterfactual*.csv` |
+| `regression/full_sample/counterfactual_check.py` | 1단계 근거 점검 |
+| `regression/train_test/*.py` | 1단계 학습·평가 분할, 교차검증 |
+| `딥러닝/*.py` | TimesFM 비교 (비교용) |
+| `policy/config.py` | 2~4단계 공통 설정(상한·유류세·반응 표·미확인 값·최적화 설정)과 자료 불러오기 |
+| `policy/fiscal.py` | 2단계 재정 부담 → `results/policy/fiscal_*.csv` |
+| `policy/cpi.py` | 3단계 반영률·실효 인상폭·물가 기여도, 정부 0.6%p 대조 → `results/policy/cpi_*.csv` |
+| `policy/optimize.py` | 4단계 11차 권고(216개 첫 행동 × 500 경로) → `results/policy/optimize_*.csv` |
+| `docs/model_design.md` | 2~4단계 모형 설정과 실행 방법 |
 
-### 원자료
-
-| 이름 | 출처 | 주기 | 단위 | 지연 |
-|---|---|---|---|---|
-| `opinet_retail` | 오피넷 파일 + API | 일 | 원/리터 | 0~1일 |
-| `opinet_intl` | 오피넷 파일 (싱가포르 제품가) | 영업일 | 달러/배럴 | 1일 |
-| `opinet_supply_pretax`, `opinet_supply_aftertax` | 오피넷 파일 (정유사 공급가) | 주 (일~토) | 원/리터 | 1~2주, 매주 금요일 공개 |
-| `ecos_fx_krw_usd` | ECOS 731Y001 | 일 | 원/달러 | |
-| `ecos_cpi_total`, `ecos_base_rate`, `ecos_dubai_usd_bbl` | ECOS | 월 | | |
-| `kosis_fuel_cpi` | KOSIS DT_1J22112 | 월 | 2020=100 | 다음 달 초 |
-| `fred_brent_usd_bbl`, `fred_fx_krw_usd_fred` | FRED (키 없음) | 일 | | 며칠 |
-
-유종별 열 이름은 `config.FUELS` 에 있다. 국제가는 휘발유(92RON), 경유(0.001%), 등유를 쓴다.
-
-### 분석용 표 (`data/processed`)
-
-- `weekly_panel.csv`: **모형 학습용.** 인덱스 `week_end`(토요일). 유종별 `{fuel}_supply_pretax`, `{fuel}_supply_aftertax`, `{fuel}_tax`, `{fuel}_intl_usd_bbl`, `{fuel}_intl_krw_l`, `{fuel}_retail`, `{fuel}_cap`, `{fuel}_cap_days` 와 `fx`, `days`, `in_policy`.
-- `daily_panel.csv`: 일별 `fx`, `{fuel}_intl_*`, `{fuel}_cap`, `{fuel}_tax`, `{fuel}_retail`, `round`, `in_policy`.
-- `monthly_panel.csv`: 월평균과 `{fuel}_cpi`, `cpi_total`.
-- `rounds.csv`: 차수별 상한, 상한 변화, 결정 직전 2주 국제가, 차수 중 평균 판매가·세후 공급가.
-- `latest.csv`: 유종별 최신값과 **실제 기준일**.
-
-`fuel` 은 `gasoline`, `diesel`, `kerosene` 이다.
+실행 순서: `python regression/full_sample/counterfactual.py` → `python policy/fiscal.py` → `python policy/cpi.py` → `python policy/optimize.py --volume … --weights … --cpi-limit …`
 
 ## 자료에서 확인한 사실 (2026-10-09 기준)
 
@@ -98,14 +78,14 @@
 합의된 알고리즘 다섯 단계와 검증, 화면이다. 파일 이름은 제안이다.
 
 1. **유종별 "없었다면" 가격** (`counterfactual.py`, **완료**): 상한제 이전 주별 자료로 `{fuel}_supply_pretax` 를 `{fuel}_intl_krw_l` 의 같은 주·1주 전·2주 전 값에 회귀한다. 계수는 합이 1이 되도록 나눠 시차 비중으로만 쓰고, 상수(마진)는 상한제 직전 52주 평균으로 다시 잡는다('최근 마진' 모형). 처음 합의한 11년 전체 회귀는 비교용으로 남겼다. `× 1.1 + {fuel}_tax` 로 세후로 바꾸고, 기점 이동 검증 오차의 5~95% 분위로 90% 구간을 붙인다. 공급가 미공개 주는 `provisional`. 결과는 `counterfactual.csv`, `counterfactual_models.csv`. 근거 점검은 `counterfactual_checks.csv`, `counterfactual_sensitivity.csv`, 그림은 `counterfactual.png`(위 = 가격 수준, 아래 = 유종별 격차). 머신러닝 비교는 넣지 않기로 했다(결과에 필요 없고, 학습 범위 밖 가격을 예측하지 못함).
-2. **격차와 재정 부담** (`fiscal.py`): 격차 = "없었다면" 세후 공급가 − 상한. 하루 재정 부담 = 격차 × `config.DAILY_VOLUME_L`.
-3. **물가 영향** (`cpi.py`): 소매가 상승 = 상한 인상폭 × 반영률(위 표에서 추정). 물가 기여도 = `config.CPI_WEIGHTS` × 소매가 상승률.
-4. **차수 결정 최적화** (`optimize.py`): 상태 = 유종별 격차·유가·환율. 행동 = 유종별 조정 폭(−60, 0, +30, +60, +90, +120원). 제약 = 월 물가 기여도 한도와 차수당 최대 인상폭. 목표 = 6개 차수 누적 재정 부담 최소화. 유가 경로를 수백 개 무작위로 만들어 평균 비용이 가장 낮은 첫 행동을 고른다.
-5. **권고문** : LLM 이 보도자료 형식으로 쓴다. 숫자는 코드가 계산한 값만 넣는다.
+2. **격차와 재정 부담** (`policy/fiscal.py`, **완료**): 격차 = "없었다면" 세후 공급가 − 상한. 하루 재정 부담 = 격차 × `config.DAILY_VOLUME_L`.
+3. **물가 영향** (`policy/cpi.py`, **완료**): 소매가 상승 = 상한 인상폭 × 반영률(위 표에서 추정). 물가 기여도 = `config.CPI_WEIGHTS` × 소매가 상승률.
+4. **차수 결정 최적화** (`policy/optimize.py`, **완료**, 판매량·가중치·한도 입력 필요): 상태 = 유종별 격차·유가·환율. 행동 = 유종별 조정 폭(−60, 0, +30, +60, +90, +120원). 제약 = 월 물가 기여도 한도와 차수당 최대 인상폭. 목표 = 6개 차수 누적 재정 부담 최소화. 유가 경로를 수백 개 무작위로 만들어 평균 비용이 가장 낮은 첫 행동을 고른다.
+5. **권고문**: 이번 범위에서 제외.
 
 **검증**
 - 정부 추정과 대조: 2026-09-18 정부 설명은 "상한제가 없었다면 휘발유는 100원대 후반, 경유는 300원대 중반 이상 더 높았을 것", "3~8월 소비자물가 상승률을 평균 0.6%p 낮췄다"이다.
-- 과거 결정 재현: `rounds.csv` 의 1~10차 각 시점 정보만으로 권고를 내어 실제 결정과 비교한다.
+- 과거 결정 재현: 1~10차 각 시점 정보만으로 (시행일·상한 자료 `caps.csv` 필요, 미보유) 권고를 내어 실제 결정과 비교한다.
 - 민감도: 반영률(75~100%)과 물가 한도를 바꿔도 11차 권고가 유지되는지 본다.
 
 **화면** (`app.py`, Streamlit): 유가 슬라이더, 11차 권고와 근거, 경로별 물가·재정 그래프, 일 단위 계기판(`latest.csv`).
@@ -117,6 +97,6 @@
 
 ## 아직 확인하지 못한 것
 
-- **`config.CPI_WEIGHTS`, `config.DAILY_VOLUME_L`**: 비어 있다. 국가데이터처 가중치 표와 석유공사 통계에서 채운다.
-- **3·5·6·9차 시행일**: `caps.csv` 에 `N` 으로 표시한 추정값이다. 상한 금액은 앞뒤 차수와 같아 가격 계산에는 영향이 없고 차수 경계에만 쓰인다.
+- **`policy/config.py` 의 `CPI_WEIGHTS`, `DAILY_VOLUME_L`, `CPI_LIMIT_PP`**: 비어 있다. 국가데이터처 가중치 표와 석유공사 통계에서 채운다.
+- **1~10차 시행일과 상한**: 이 저장소에 `caps.csv` 가 없다. 과거 결정 재현에 필요하다.
 - **사전 작성 코드 허용 여부**: 주최 측 답을 받지 못했다.
