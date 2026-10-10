@@ -155,7 +155,8 @@ for 첫 행동 a (216가지):
 python regression/full_sample/counterfactual.py      # 1단계 (결과가 이미 있으면 생략)
 python policy/fiscal.py  [--volume 휘발유,경유,등유]   # 2단계 → results/policy/fiscal_weekly.csv, fiscal_summary.csv
 python policy/cpi.py     [--weights 휘발유,경유,등유]  # 3단계 → results/policy/cpi_pass_through.csv, cpi_policy_effect.csv
-python policy/optimize.py [--cpi-limit 값] [--sensitivity] [--replay]   # 4단계 → results/policy/optimize_*.csv
+python policy/optimize.py [--cpi-limit 값] [--sensitivity] [--replay]
+python policy/plots.py                                # 그림 → results/policy/cpi.png, optimize.png, checks.png   # 4단계 → results/policy/optimize_*.csv
 ```
 
 미확인 값은 `policy/config.py` 에 `None` 으로 두었습니다. 넣는 방법은 두 가지입니다: `config.py` 를 고치거나, 명령행 인자로 넣습니다.

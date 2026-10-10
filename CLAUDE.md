@@ -44,9 +44,10 @@
 | `policy/fiscal.py` | 2단계 재정 부담 → `results/policy/fiscal_*.csv` |
 | `policy/cpi.py` | 3단계 반영률·실효 인상폭·물가 기여도, 정부 0.6%p 대조 → `results/policy/cpi_*.csv` |
 | `policy/optimize.py` | 4단계 11차 권고(216개 첫 행동 × 500 경로) → `results/policy/optimize_*.csv` |
+| `policy/plots.py` | 3·4단계 그림 → `results/policy/cpi.png`, `optimize.png`, `checks.png` |
 | `docs/model_design.md` | 2~4단계 모형 설정과 실행 방법 |
 
-실행 순서: `python regression/full_sample/counterfactual.py` → `python policy/fiscal.py` → `python policy/cpi.py` → `python policy/optimize.py --sensitivity --replay`
+실행 순서: `python regression/full_sample/counterfactual.py` → `python policy/fiscal.py` → `python policy/cpi.py` → `python policy/optimize.py --sensitivity --replay` → `python policy/plots.py`
 
 ## 자료에서 확인한 사실 (2026-10-09 기준)
 

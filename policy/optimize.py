@@ -204,6 +204,8 @@ def main():
     pd.DataFrame({"권고": totals[tuple(float(v) for v in rec)], "동결": freeze_total}).div(1e8).to_csv(
         out / "optimize_paths.csv", index_label="path", encoding="utf-8-sig", float_format="%.2f")
 
+    pd.DataFrame({"fuel": C.FUELS, "cap": ctx["cap0"], "cf_now": now, "gap": now - ctx["cap0"], "action": rec,
+                  "cpi_limit": args.cpi_limit}).to_csv(out / "optimize_state.csv", index=False, encoding="utf-8-sig")
     pd.set_option("display.width", 200)
     print(f"[4단계 상태] 국제가 기준 주 {intl.index[-1].date()}, 판매가 기준 {retail_week}")
     for i, f in enumerate(C.FUELS):
@@ -217,17 +219,23 @@ def main():
 
     if args.sensitivity:
         print("\n[민감도] 권고 유지 여부")
+        sens = [("기본", rec)]
         cases = [("반영률 75%", dict(scale=0.75)), ("반영률 100%", dict(scale=1 / 0.9)),
                  ("반영률 4주 값만", dict(mode="4w")),
                  ("한도 ×0.5", dict(limit=args.cpi_limit * 0.5)), ("한도 ×1.5", dict(limit=args.cpi_limit * 1.5))]
         for name, kw in cases:
             c = context(volume, weights, kw.get("limit", args.cpi_limit), retail, kw.get("scale", 1.0),
                         kw.get("mode", C.PASS_MODE), intl.index[-1])
-            print(f"  {name}: {best(optimize(cf, now, c)[0])}")
+            sens.append((name, best(optimize(cf, now, c)[0])))
+            print(f"  {name}: {sens[-1][1]}")
         cf3, now3 = counterfactual_paths(intl, simulate_intl(intl, weeks, start=pd.Timestamp("2023-03-01")), params)
-        print(f"  추출 기간 최근 3년: {best(optimize(cf3, now3, ctx)[0])}")
+        sens.append(("추출 기간 최근 3년", best(optimize(cf3, now3, ctx)[0])))
+        print(f"  추출 기간 최근 3년: {sens[-1][1]}")
         cf2, now2 = counterfactual_paths(intl, simulate_intl(intl, weeks, seed=C.SEED + 1), params)
-        print(f"  다른 난수 시드: {best(optimize(cf2, now2, ctx)[0])}")
+        sens.append(("다른 난수 시드", best(optimize(cf2, now2, ctx)[0])))
+        print(f"  다른 난수 시드: {sens[-1][1]}")
+        pd.DataFrame([{"조건": n, **{C.KO[f]: a[i] for i, f in enumerate(C.FUELS)}} for n, a in sens]).to_csv(
+            out / "optimize_sensitivity.csv", index=False, encoding="utf-8-sig")
     if args.replay:
         rep = replay(volume, weights, args.cpi_limit)
         rep.to_csv(out / "optimize_replay.csv", index=False, encoding="utf-8-sig")
