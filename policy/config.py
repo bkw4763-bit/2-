@@ -82,8 +82,8 @@ def load_intl():
     return out
 
 
-# 5. 최신 주유소 판매가(원/리터)와 기준 주차. 물가 기여도의 분모로 씁니다.
-def latest_retail():
+# 5. 주간 판매가 파일의 마지막 주 값(원/리터)과 주차. 오피넷 API가 실패했을 때의 대체값입니다.
+def weekly_retail_last():
     raw = pd.read_csv(RETAIL_PATH, encoding="cp949")
     last = raw.iloc[-1]
     return {"gasoline": float(last.iloc[2]), "diesel": float(last.iloc[3]), "kerosene": float(last.iloc[4])}, str(last.iloc[0])
@@ -145,3 +145,11 @@ def daily_volume(month, sales=None):
 def load_caps():
     caps = pd.read_csv(CAPS_PATH, encoding="utf-8-sig", parse_dates=["start"])
     return caps.set_index("round")
+
+
+
+# 11. 물가 기여도의 분모로 쓸 최신 판매가. 오피넷 API(오늘 전국 평균)를 먼저 쓰고, 실패하면 저장본·주간 파일로 대체합니다.
+def latest_retail():
+    from opinet import latest_retail as fetch_latest
+    prices, day, source = fetch_latest()
+    return prices, f"{day} ({source})"

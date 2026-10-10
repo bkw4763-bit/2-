@@ -40,6 +40,7 @@
 | `regression/train_test/*.py` | 1단계 학습·평가 분할, 교차검증 |
 | `딥러닝/*.py` | TimesFM 비교 (비교용) |
 | `policy/config.py` | 2~4단계 공통 설정(상한·유류세·반응 표·미확인 값·최적화 설정)과 자료 불러오기 |
+| `policy/opinet.py` | 오피넷 API로 오늘 전국 평균 판매가(휘발유·경유·실내등유). 키는 `.env` 의 `OPINET_KEY`. 실패하면 저장본 → 주간 파일 |
 | `policy/fiscal.py` | 2단계 재정 부담 → `results/policy/fiscal_*.csv` |
 | `policy/cpi.py` | 3단계 반영률·실효 인상폭·물가 기여도, 정부 0.6%p 대조 → `results/policy/cpi_*.csv` |
 | `policy/optimize.py` | 4단계 11차 권고(216개 첫 행동 × 500 경로) → `results/policy/optimize_*.csv` |
