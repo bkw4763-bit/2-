@@ -11,9 +11,17 @@ from pathlib import Path
 
 # 2. csv 폴더의 주간 자료를 합쳐 같은 폴더에 저장합니다.
 # 일별 환율 원본은 제외하고, 전처리된 주간 평균 환율을 사용합니다.
-# 실행: python "csv 파일 합치기.py"
-CSV_DIR = Path(__file__).resolve().parent / "csv"
-DEFAULT_OUTPUT = CSV_DIR / "전체_주간통합.csv"
+# 실행: python "preprocessing/merge_weekly_csv.py"
+CSV_DIR = Path(__file__).resolve().parent.parent / "csv"
+DEFAULT_OUTPUT = CSV_DIR / "merged_weekly_data.csv"
+# 파일명 변경 후에도 기존 통합 CSV의 한글 열 이름과 열 순서를 유지합니다.
+SOURCE_PREFIXES = {
+    "international_petroleum_prices_2015011_2026101_krw": "국제_석유제품가격(원)",
+    "usd_krw_weekly_average": "원달러환율_주간평균",
+    "refinery_weekly_prices_after_tax": "정유사_주간공급가격_제품별(세후)",
+    "refinery_weekly_prices_before_tax": "정유사_주간공급가격_제품별(세전)",
+    "gas_station_weekly_prices": "주유소_평균판매가격_제품별(주간)",
+}
 
 
 
@@ -57,7 +65,7 @@ def parse_week(value):
 def load_weekly_table(path, header, rows):
     if header[0].strip() not in {"구분", "기간", "주차"}:
         raise ValueError(f"주차 열을 찾을 수 없습니다: {path.name}")
-    prefix = re.sub(r"\d{7,8}_\d{6,8}", "", path.stem).replace(" ", "")
+    prefix = SOURCE_PREFIXES.get(path.stem, re.sub(r"\d{7,8}_\d{6,8}", "", path.stem).replace(" ", ""))
     columns = [f"{prefix}_{name.strip()}" for name in header[1:]]
     if any(not name.strip() for name in header[1:]) or len(columns) != len(set(columns)):
         raise ValueError(f"빈 열 이름 또는 중복 열 이름: {path.name}")
@@ -82,7 +90,8 @@ def merge_csv_files(input_dir, output):
     columns = ["주차"]
     weeks = set()
     skipped = []
-    for path in sorted(input_dir.glob("*.csv")):
+    source_order = {name: index for index, name in enumerate(SOURCE_PREFIXES)}
+    for path in sorted(input_dir.glob("*.csv"), key=lambda path: (source_order.get(path.stem, len(source_order)), path.stem)):
         if path.resolve() in {output.resolve(), (input_dir / DEFAULT_OUTPUT.name).resolve()}:
             continue
         header, rows = read_csv(path)
@@ -120,7 +129,7 @@ def merge_csv_files(input_dir, output):
 
 
 # 7. 실행 옵션을 읽고 통합 결과를 안내합니다. 원본 CSV는 수정하지 않습니다.
-# 저장 위치 변경: python "csv 파일 합치기.py" --output "csv/통합.csv"
+# 저장 위치 변경: python "preprocessing/merge_weekly_csv.py" --output "csv/merged.csv"
 def main():
     parser = argparse.ArgumentParser(description="주간 CSV를 주차 기준으로 가로 병합합니다.")
     parser.add_argument("--input-dir", type=Path, default=CSV_DIR)

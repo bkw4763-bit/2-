@@ -11,9 +11,9 @@ from pathlib import Path
 
 
 # 2. 일별 환율과 기존 주간 CSV의 위치를 지정합니다.
-# 기본 실행: python "환율 주차 전처리.py"
-CSV_DIR = Path(__file__).resolve().parent / "csv"
-REFERENCE = CSV_DIR / "주유소_평균판매가격_제품별(주간).csv"
+# 기본 실행: python "preprocessing/preprocess_weekly_exchange_rates.py"
+CSV_DIR = Path(__file__).resolve().parent.parent / "csv"
+REFERENCE = CSV_DIR / "gas_station_weekly_prices.csv"
 
 
 
@@ -110,20 +110,20 @@ def save_weekly_rates(groups, labels, output):
 
 
 # 7. 가장 긴 기간의 일별 파일을 기본 입력으로 골라 전처리를 실행합니다.
-# 직접 지정: python "환율 주차 전처리.py" --input "csv/일별파일.csv"
+# 직접 지정: python "preprocessing/preprocess_weekly_exchange_rates.py" --input "csv/daily.csv"
 # --reference로 다른 주간 CSV, --output으로 결과 저장 위치를 지정할 수 있습니다.
 def main():
     parser = argparse.ArgumentParser(description="일별 원·달러 환율을 기존 CSV 주차별 평균으로 변환합니다.")
     parser.add_argument("--input", type=Path)
     parser.add_argument("--reference", type=Path, default=REFERENCE)
-    parser.add_argument("--output", type=Path, default=CSV_DIR / "원달러환율_주간평균.csv")
+    parser.add_argument("--output", type=Path, default=CSV_DIR / "usd_krw_weekly_average.csv")
     args = parser.parse_args()
     try:
         input_path = args.input
         if input_path is None:
             candidates = []
-            for path in CSV_DIR.glob("원달러환율_*.csv"):
-                match = re.fullmatch(r"원달러환율_(\d{8})_(\d{8})", path.stem)
+            for path in CSV_DIR.glob("usd_krw_daily_*.csv"):
+                match = re.fullmatch(r"usd_krw_daily_(\d{8})_(\d{8})", path.stem)
                 if match:
                     start, end = (date(int(s[:4]), int(s[4:6]), int(s[6:])) for s in match.groups())
                     candidates.append(((end - start).days, end, path))

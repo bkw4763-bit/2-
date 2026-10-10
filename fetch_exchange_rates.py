@@ -126,7 +126,7 @@ def save_csv(rows, output_path):
 
 # 7. 실행 옵션을 읽고 인증키 로딩 → API 조회 → CSV 저장 순서로 진행합니다.
 # 기본값은 한국 시간 기준 최근 30일이며, 기간과 저장 위치를 변경할 수 있습니다.
-# 실행 예: python "환율 api 불러오기.py" --start 20260101 --end 20260131
+# 실행 예: python "fetch_exchange_rates.py" --start 20260101 --end 20260131
 def main():
     today = datetime.now(timezone(timedelta(hours=9))).date()
     parser = argparse.ArgumentParser(description="ECOS 일별 원·달러 환율을 CSV로 저장합니다.")
@@ -136,7 +136,7 @@ def main():
     args = parser.parse_args()
     if args.start > args.end:
         parser.error("시작일은 종료일보다 늦을 수 없습니다.")
-    output_path = args.output or BASE_DIR / "csv" / f"원달러환율_{args.start:%Y%m%d}_{args.end:%Y%m%d}.csv"
+    output_path = args.output or BASE_DIR / "csv" / f"usd_krw_daily_{args.start:%Y%m%d}_{args.end:%Y%m%d}.csv"
     try:
         rows = fetch_exchange_rates(load_api_key(), args.start, args.end)
         save_csv(rows, output_path)
