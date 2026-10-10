@@ -1,0 +1,13 @@
+{
+  "checkpoint": "C:\\Users\\ohobe\\OneDrive\\Desktop\\경제 헤커톤\\모델\\timesfm-3.0-pytorch",
+  "policy_start": "2026-03-13",
+  "prior_rows": 578,
+  "policy_rows": 29,
+  "features": [
+    "intl_t",
+    "intl_t-1",
+    "intl_t-2",
+    "exchange_rate_t"
+  ],
+  "normalized_files": "C:\\Users\\ohobe\\OneDrive\\Desktop\\경제 대회 본문\\csv\\normalized"
+}
