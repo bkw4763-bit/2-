@@ -193,7 +193,7 @@ def plot_summary():
         a.barh(yi, gap, height=0.6, color=COLORS[f], alpha=0.22)
         a.barh(yi, act, height=0.6, color=COLORS[f])
         a.annotate(f"{act:+.0f}원 올림", (act, yi), xytext=(5, 0), textcoords="offset points", va="center", color=INK, fontsize=11, fontweight="bold")
-        a.annotate(f"정부가 메워 주는 돈 {gap:.0f}원", (gap, yi), xytext=(-5, 0), textcoords="offset points", va="center", ha="right", color=INK_2, fontsize=9)
+        a.annotate(f"정부 지원금액 {gap:.0f}원", (gap, yi), xytext=(-5, 0), textcoords="offset points", va="center", ha="right", color=INK_2, fontsize=9)
     a.set_yticks(y, names, fontsize=11)
     a.set_xlabel("리터당 원")
     a.grid(axis="y", visible=False)
